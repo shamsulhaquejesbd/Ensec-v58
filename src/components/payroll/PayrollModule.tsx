@@ -197,6 +197,7 @@ export const PayrollModule: React.FC = () => {
   const [strSpecial, setStrSpecial] = useState<number>(0);
   const [strOther, setStrOther] = useState<number>(0);
   const [strEffectiveFrom, setStrEffectiveFrom] = useState<string>('2026-01-01');
+  const [strRevisionReason, setStrRevisionReason] = useState<string>('');
 
   // Form state for Leave Application
   const [leaveEmployeeId, setLeaveEmployeeId] = useState<string>('');
@@ -1157,7 +1158,9 @@ export const PayrollModule: React.FC = () => {
                     const med = str?.medicalAllowanceBDT ?? Math.round(basic * 0.1);
                     const conv = str?.conveyanceAllowanceBDT ?? emp.conveyanceBDT ?? 0;
                     const mob = str?.mobileAllowanceBDT ?? emp.mobileAllowanceBDT ?? 0;
-                    const gross = basic + house + med + conv + mob;
+                    const spec = str?.specialAllowanceBDT ?? 0;
+                    const other = str?.otherAllowancesBDT ?? 0;
+                    const gross = basic + house + med + conv + mob + spec + other;
 
                     return (
                       <tr key={emp.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
@@ -1198,29 +1201,32 @@ export const PayrollModule: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 text-right">
                           <button
+                            type="button"
                             onClick={() => {
                               setSelectedEmployeeForStructure(emp);
                               if (str) {
                                 setEditingStructure(str);
-                                setStrBasic(str.basicSalaryBDT);
-                                setStrHouseRent(str.houseRentBDT);
-                                setStrMedical(str.medicalAllowanceBDT);
-                                setStrConveyance(str.conveyanceAllowanceBDT);
-                                setStrMobile(str.mobileAllowanceBDT);
-                                setStrSpecial(str.specialAllowanceBDT);
-                                setStrOther(str.otherAllowancesBDT);
-                                setStrEffectiveFrom(str.effectiveFrom);
+                                setStrBasic(str.basicSalaryBDT ?? 0);
+                                setStrHouseRent(str.houseRentBDT ?? 0);
+                                setStrMedical(str.medicalAllowanceBDT ?? 0);
+                                setStrConveyance(str.conveyanceAllowanceBDT ?? 0);
+                                setStrMobile(str.mobileAllowanceBDT ?? 0);
+                                setStrSpecial(str.specialAllowanceBDT ?? 0);
+                                setStrOther(str.otherAllowancesBDT ?? 0);
+                                setStrEffectiveFrom(str.effectiveFrom || new Date().toISOString().slice(0, 10));
                               } else {
+                                const defaultBasic = emp.basicSalaryBDT ?? 30000;
                                 setEditingStructure(null);
-                                setStrBasic(emp.basicSalaryBDT || 30000);
-                                setStrHouseRent((emp.basicSalaryBDT || 30000) * 0.5);
-                                setStrMedical((emp.basicSalaryBDT || 30000) * 0.1);
-                                setStrConveyance(emp.conveyanceBDT || 3000);
-                                setStrMobile(emp.mobileAllowanceBDT || 1500);
+                                setStrBasic(defaultBasic);
+                                setStrHouseRent(Math.round(defaultBasic * 0.5));
+                                setStrMedical(Math.round(defaultBasic * 0.1));
+                                setStrConveyance(emp.conveyanceBDT ?? 0);
+                                setStrMobile(emp.mobileAllowanceBDT ?? 0);
                                 setStrSpecial(0);
                                 setStrOther(0);
-                                setStrEffectiveFrom('2026-01-01');
+                                setStrEffectiveFrom(new Date().toISOString().slice(0, 10));
                               }
+                              setStrRevisionReason('');
                               setShowStructureModal(true);
                             }}
                             className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 text-[11px] font-bold"
@@ -3862,6 +3868,277 @@ export const PayrollModule: React.FC = () => {
                 );
               })()}
             </div>
+          </div>
+        </div>
+      )}
+      {/* ========================================================================= */}
+      {/* MODAL: EDIT / CONFIGURE EMPLOYEE SALARY STRUCTURE                         */}
+      {/* ========================================================================= */}
+      {showStructureModal && selectedEmployeeForStructure && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="w-full max-w-2xl max-h-[90vh] flex flex-col bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden text-xs">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-800">
+              <div>
+                <h3 className="font-bold text-sm text-slate-900 dark:text-white">
+                  {editingStructure ? 'Edit Salary Structure' : 'Configure Salary Structure'}: {selectedEmployeeForStructure.name}{' '}
+                  ({selectedEmployeeForStructure.code || selectedEmployeeForStructure.id})
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  {selectedEmployeeForStructure.designation || 'Staff'} • {selectedEmployeeForStructure.department || 'Operations'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowStructureModal(false)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const basic = Math.max(0, Number(strBasic) || 0);
+                const house = Math.max(0, Number(strHouseRent) || 0);
+                const med = Math.max(0, Number(strMedical) || 0);
+                const conv = Math.max(0, Number(strConveyance) || 0);
+                const mob = Math.max(0, Number(strMobile) || 0);
+                const spec = Math.max(0, Number(strSpecial) || 0);
+                const other = Math.max(0, Number(strOther) || 0);
+                const gross = basic + house + med + conv + mob + spec + other;
+                const reason = strRevisionReason.trim() || (editingStructure ? 'Salary Structure Revision' : 'Initial Structure Creation');
+
+                if (editingStructure) {
+                  updateSalaryStructure(
+                    editingStructure.id,
+                    {
+                      basicSalaryBDT: basic,
+                      houseRentBDT: house,
+                      medicalAllowanceBDT: med,
+                      conveyanceAllowanceBDT: conv,
+                      mobileAllowanceBDT: mob,
+                      specialAllowanceBDT: spec,
+                      otherAllowancesBDT: other,
+                      grossSalaryBDT: gross,
+                      effectiveFrom: strEffectiveFrom,
+                      revisionReason: reason,
+                      revisedBy: currentUser?.name || 'HR Admin',
+                    },
+                    reason
+                  );
+                } else {
+                  addSalaryStructure({
+                    employeeId: selectedEmployeeForStructure.id,
+                    fieldForceId: selectedEmployeeForStructure.id,
+                    employeeCode: selectedEmployeeForStructure.code || selectedEmployeeForStructure.id,
+                    employeeName: selectedEmployeeForStructure.name || 'Employee',
+                    designation: selectedEmployeeForStructure.designation || 'Staff',
+                    department: selectedEmployeeForStructure.department || 'Operations',
+                    employeeCategory: selectedEmployeeForStructure.employeeCategory as any,
+                    effectiveFrom: strEffectiveFrom,
+                    basicSalaryBDT: basic,
+                    houseRentBDT: house,
+                    medicalAllowanceBDT: med,
+                    conveyanceAllowanceBDT: conv,
+                    mobileAllowanceBDT: mob,
+                    specialAllowanceBDT: spec,
+                    otherAllowancesBDT: other,
+                    grossSalaryBDT: gross,
+                    revisionReason: reason,
+                    revisedBy: currentUser?.name || 'HR Admin',
+                  });
+                }
+
+                setShowStructureModal(false);
+              }}
+              className="flex flex-col flex-1 min-h-0"
+            >
+              <div className="p-5 overflow-y-auto space-y-4">
+                <div className="p-3.5 rounded-xl bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900/50 flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-blue-900 dark:text-blue-200 block">Calculated Gross Base Salary</span>
+                    <span className="text-[11px] text-blue-700/80 dark:text-blue-300/80">
+                      Sum of Basic Pay and all configured allowances
+                    </span>
+                  </div>
+                  <span className="text-xl font-black font-mono text-blue-700 dark:text-blue-300">
+                    ৳ {(
+                      (Number(strBasic) || 0) +
+                      (Number(strHouseRent) || 0) +
+                      (Number(strMedical) || 0) +
+                      (Number(strConveyance) || 0) +
+                      (Number(strMobile) || 0) +
+                      (Number(strSpecial) || 0) +
+                      (Number(strOther) || 0)
+                    ).toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="font-bold text-slate-700 dark:text-slate-300">Basic Pay (BDT)*</label>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base = Math.max(0, Number(strBasic) || 0);
+                          setStrHouseRent(Math.round(base * 0.5));
+                          setStrMedical(Math.round(base * 0.1));
+                        }}
+                        className="text-[10px] font-semibold text-blue-600 hover:underline"
+                      >
+                        Auto-calc 50% House / 10% Med
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      min={0}
+                      required
+                      value={strBasic}
+                      onChange={(e) => setStrBasic(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Effective From*</label>
+                    <input
+                      type="date"
+                      required
+                      value={strEffectiveFrom}
+                      onChange={(e) => setStrEffectiveFrom(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">House Rent Allowance (BDT)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={strHouseRent}
+                      onChange={(e) => setStrHouseRent(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Medical Allowance (BDT)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={strMedical}
+                      onChange={(e) => setStrMedical(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Conveyance Allowance (BDT)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={strConveyance}
+                      onChange={(e) => setStrConveyance(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Mobile Allowance (BDT)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={strMobile}
+                      onChange={(e) => setStrMobile(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Special Allowance (BDT)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={strSpecial}
+                      onChange={(e) => setStrSpecial(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Other Allowances (BDT)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={strOther}
+                      onChange={(e) => setStrOther(Number(e.target.value))}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 font-mono"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 dark:text-slate-300 mb-1">Revision Reason / Remarks</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Annual Increment / Grade Adjustment"
+                    value={strRevisionReason}
+                    onChange={(e) => setStrRevisionReason(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800"
+                  />
+                </div>
+
+                {editingStructure?.history && editingStructure.history.length > 0 && (
+                  <div className="space-y-1.5 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div className="text-[11px] font-bold uppercase text-slate-500">
+                      Revision History ({editingStructure.history.length})
+                    </div>
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-800 overflow-x-auto">
+                      <table className="w-full text-left text-[11px]">
+                        <thead>
+                          <tr className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500">
+                            <th className="py-1.5 px-3">Effective</th>
+                            <th className="py-1.5 px-3 text-right">Basic</th>
+                            <th className="py-1.5 px-3 text-right">Gross</th>
+                            <th className="py-1.5 px-3">Reason</th>
+                            <th className="py-1.5 px-3">Updated By</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {editingStructure.history.map((h, i) => (
+                            <tr key={i}>
+                              <td className="py-1.5 px-3 font-mono">{h.effectiveDate}</td>
+                              <td className="py-1.5 px-3 text-right font-mono">৳ {h.basicSalaryBDT.toLocaleString()}</td>
+                              <td className="py-1.5 px-3 text-right font-mono font-bold">৳ {h.grossSalaryBDT.toLocaleString()}</td>
+                              <td className="py-1.5 px-3">{h.reason}</td>
+                              <td className="py-1.5 px-3 text-slate-500">{h.changedBy}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2 px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900">
+                <button
+                  type="button"
+                  onClick={() => setShowStructureModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-sm"
+                >
+                  Save Salary Structure
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
