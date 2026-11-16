@@ -11,7 +11,8 @@ import {
   Layers, 
   ExternalLink,
   History,
-  Lock
+  Lock,
+  ShieldAlert
 } from 'lucide-react';
 
 export const OvertimePayrollCostingTab: React.FC = () => {
@@ -24,6 +25,9 @@ export const OvertimePayrollCostingTab: React.FC = () => {
     currentUser,
   } = useERP();
 
+  const canViewPage = hasPageAction
+    ? hasPageAction('overtime-management', 'view_payroll_sync')
+    : currentUser.role === 'Super Admin';
   const canViewCost = hasPageAction
     ? hasPageAction('overtime-management', 'view_cost')
     : currentUser.role === 'Super Admin';
@@ -48,6 +52,22 @@ export const OvertimePayrollCostingTab: React.FC = () => {
     const ovhAlloc = r.batchAllocations?.filter(a => a.isOverhead).reduce((s, a) => s + a.allocatedCostBDT, 0) || 0;
     return sum + ovhAlloc;
   }, 0);
+
+  if (!canViewPage) {
+    return (
+      <div className="p-8 max-w-md mx-auto mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm text-center space-y-3">
+        <div className="w-12 h-12 mx-auto rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">
+          Payroll &amp; Costing Dual-Sync Access Restricted
+        </h2>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Your account lacks <strong>Payroll &amp; Costing Dual-Sync</strong> page permission under Overtime Management Hub. Contact your administrator to grant access.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

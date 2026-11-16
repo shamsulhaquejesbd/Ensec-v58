@@ -51,6 +51,8 @@ import {
   UserPagePermissionsMap,
   countGrantedPermissions,
   ERPPageDef,
+  OVERTIME_SUBPAGE_ACTION_KEYS,
+  OVERTIME_SUBPAGE_ACTION_MAP,
 } from '../../types/pagePermissions.ts';
 
 interface PageWisePermissionsEditorProps {
@@ -133,6 +135,19 @@ export const PageWisePermissionsEditor: React.FC<PageWisePermissionsEditorProps>
           userMap[page.id][act.key] = Boolean(pageExisting[act.key]);
         } else if (targetUser.role === 'Super Admin') {
           userMap[page.id][act.key] = true;
+        } else if (
+          page.id === 'overtime-management' &&
+          OVERTIME_SUBPAGE_ACTION_KEYS.includes(act.key)
+        ) {
+          const matchingChild = Object.entries(OVERTIME_SUBPAGE_ACTION_MAP).find(
+            ([, v]) => v === act.key
+          )?.[0];
+          const hasLegacyOtAccess = Boolean(
+            pageExisting?.view ||
+              allowedMods.includes('overtime-management' as any) ||
+              (matchingChild && allowedMods.includes(matchingChild as any))
+          );
+          userMap[page.id][act.key] = hasLegacyOtAccess;
         } else if (page.id === 'raw-material-inventory' && ['view_raw_material_stock_value', 'view_raw_material_purchase_rate', 'view_batch_stock_value'].includes(act.key)) {
           const isFactory = targetUser.role === 'Factory Manager' || targetUser.role === 'Warehouse Manager' || (targetUser.department && targetUser.department.toLowerCase().includes('factory'));
           if (!isFactory && pageExisting && pageExisting['view_valuation'] !== undefined) {
@@ -298,6 +313,7 @@ export const PageWisePermissionsEditor: React.FC<PageWisePermissionsEditorProps>
     if (!srcUser) return;
 
     const srcPerms = srcUser.permissions?.pagePermissions || {};
+    const srcAllowedMods = srcUser.permissions?.allowedModules || [];
     const newMap: UserPagePermissionsMap = {};
 
     ALL_ERP_PAGES.forEach((page) => {
@@ -307,6 +323,18 @@ export const PageWisePermissionsEditor: React.FC<PageWisePermissionsEditorProps>
           newMap[page.id][act.key] = Boolean(srcPerms[page.id][act.key]);
         } else if (srcUser.role === 'Super Admin') {
           newMap[page.id][act.key] = true;
+        } else if (
+          page.id === 'overtime-management' &&
+          OVERTIME_SUBPAGE_ACTION_KEYS.includes(act.key)
+        ) {
+          const matchingChild = Object.entries(OVERTIME_SUBPAGE_ACTION_MAP).find(
+            ([, v]) => v === act.key
+          )?.[0];
+          newMap[page.id][act.key] = Boolean(
+            srcPerms[page.id]?.view ||
+              srcAllowedMods.includes('overtime-management' as any) ||
+              (matchingChild && srcAllowedMods.includes(matchingChild as any))
+          );
         } else {
           newMap[page.id][act.key] = false;
         }
@@ -980,6 +1008,11 @@ export const PageWisePermissionsEditor: React.FC<PageWisePermissionsEditorProps>
                                             {subTitle === 'Cost Visibility & Cost Sheet Permissions' && (
                                               <p className="text-[10px] text-slate-500 dark:text-slate-400">
                                                 Independent ON/OFF cost visibility &amp; Cost Sheet controls. Off options are enforced across UI, URLs, and API responses.
+                                              </p>
+                                            )}
+                                            {subTitle === 'Page-Wise Access Permissions' && (
+                                              <p className="text-[10px] text-slate-500 dark:text-slate-400">
+                                                Independent ON/OFF access controls for each Overtime Management page. Revoked pages are hidden from navigation and blocked across routes and API endpoints.
                                               </p>
                                             )}
                                           </div>

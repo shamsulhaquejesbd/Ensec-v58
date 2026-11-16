@@ -40,9 +40,12 @@ export const OvertimePolicySettingsTab: React.FC = () => {
     hasPageAction,
   } = useERP();
 
-  const canConfigurePolicy = hasPageAction
-    ? hasPageAction('overtime-management', 'configure_policy')
+  const canViewPage = hasPageAction
+    ? hasPageAction('overtime-management', 'view_policies')
     : currentUser.role === 'Super Admin';
+  const canConfigurePolicy = (hasPageAction
+    ? hasPageAction('overtime-management', 'configure_policy')
+    : currentUser.role === 'Super Admin') && canViewPage;
   const canViewCost = hasPageAction
     ? hasPageAction('overtime-management', 'view_cost')
     : currentUser.role === 'Super Admin';
@@ -243,6 +246,22 @@ export const OvertimePolicySettingsTab: React.FC = () => {
       basic,
     };
   }, [editingEmployee, salaryStructures, editIsEligible, editBasis, editStandardHours, editMultiplier, editFixedRate, editStatus]);
+
+  if (!canViewPage) {
+    return (
+      <div className="p-8 max-w-md mx-auto mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm text-center space-y-3">
+        <div className="w-12 h-12 mx-auto rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">
+          Policy Configuration Access Restricted
+        </h2>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Your account lacks <strong>Policy Configuration</strong> page permission under Overtime Management Hub. Contact your administrator to grant access.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto">

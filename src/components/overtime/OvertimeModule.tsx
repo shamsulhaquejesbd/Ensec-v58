@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useERP } from '../../context/ERPContext';
 import { OvertimeRequest } from '../../types/overtime';
 import { OvertimeDashboardTab } from './OvertimeDashboardTab';
@@ -35,12 +35,23 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
   const { overtimeRequests, overtimeAttendances, hasPageAction, currentUser } = useERP();
 
   const canView = hasPageAction ? hasPageAction('overtime-management', 'view') : currentUser.role === 'Super Admin';
-  const canCreateRequest = hasPageAction ? hasPageAction('overtime-management', 'create_request') : currentUser.role === 'Super Admin';
-  const canEditRequest = hasPageAction ? hasPageAction('overtime-management', 'edit_request') : currentUser.role === 'Super Admin';
-  const canRecordAttendance = hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin';
-  const canAllocateBatch = hasPageAction ? hasPageAction('overtime-management', 'allocate_batch') : currentUser.role === 'Super Admin';
+  const canViewRequests = hasPageAction ? hasPageAction('overtime-management', 'view_requests') : currentUser.role === 'Super Admin';
+  const canViewAttendance = hasPageAction ? hasPageAction('overtime-management', 'view_attendance') : currentUser.role === 'Super Admin';
+  const canViewBatchAllocation = hasPageAction ? hasPageAction('overtime-management', 'view_batch_allocation') : currentUser.role === 'Super Admin';
+  const canViewPayrollSync = hasPageAction ? hasPageAction('overtime-management', 'view_payroll_sync') : currentUser.role === 'Super Admin';
+  const canViewPolicies = hasPageAction ? hasPageAction('overtime-management', 'view_policies') : currentUser.role === 'Super Admin';
+  const canViewReports = hasPageAction ? hasPageAction('overtime-management', 'view_reports') : currentUser.role === 'Super Admin';
+
+  const canCreateRequest = (hasPageAction ? hasPageAction('overtime-management', 'create_request') : currentUser.role === 'Super Admin') && canViewRequests;
+  const canEditRequest = (hasPageAction ? hasPageAction('overtime-management', 'edit_request') : currentUser.role === 'Super Admin') && canViewRequests;
+  const canRecordAttendance = (hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin') && canViewAttendance;
+  const canAllocateBatch = (hasPageAction ? hasPageAction('overtime-management', 'allocate_batch') : currentUser.role === 'Super Admin') && canViewBatchAllocation;
 
   const [currentTab, setCurrentTab] = useState<string>(initialSubTab);
+
+  useEffect(() => {
+    setCurrentTab(initialSubTab);
+  }, [initialSubTab]);
 
   // Modal states
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
@@ -69,15 +80,22 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
   const pendingRequestsCount = overtimeRequests.filter(r => r.status !== 'Final Approved' && r.status !== 'Rejected').length;
   const pendingAttendancesCount = overtimeAttendances.filter(a => !a.isVerified).length;
 
-  const tabs = [
-    { id: 'dashboard', label: 'OT Dashboard', icon: LayoutDashboard },
-    { id: 'requests', label: 'OT Requests', icon: FileText, badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined },
-    { id: 'attendance', label: 'OT Attendance & Bio-Punches', icon: Clock, badge: pendingAttendancesCount > 0 ? pendingAttendancesCount : undefined },
-    { id: 'batch_allocation', label: 'Batch Allocation & Split', icon: Layers },
-    { id: 'payroll_costing_sync', label: 'Payroll & Costing Dual-Sync', icon: ArrowRightLeft },
-    { id: 'policies', label: 'Policy Configuration', icon: Settings2 },
-    { id: 'reports', label: 'Reports & Export', icon: FileSpreadsheet },
+  const allTabs = [
+    { id: 'dashboard', label: 'OT Dashboard', icon: LayoutDashboard, allowed: true },
+    { id: 'requests', label: 'OT Requests', icon: FileText, badge: pendingRequestsCount > 0 ? pendingRequestsCount : undefined, allowed: canViewRequests },
+    { id: 'attendance', label: 'OT Attendance & Bio-Punches', icon: Clock, badge: pendingAttendancesCount > 0 ? pendingAttendancesCount : undefined, allowed: canViewAttendance },
+    { id: 'batch_allocation', label: 'Batch Allocation & Split', icon: Layers, allowed: canViewBatchAllocation },
+    { id: 'payroll_costing_sync', label: 'Payroll & Costing Dual-Sync', icon: ArrowRightLeft, allowed: canViewPayrollSync },
+    { id: 'policies', label: 'Policy Configuration', icon: Settings2, allowed: canViewPolicies },
+    { id: 'reports', label: 'Reports & Export', icon: FileSpreadsheet, allowed: canViewReports },
   ];
+
+  const tabs = allTabs.filter((t) => t.allowed);
+
+  const isTabAllowed = (tabId: string): boolean => {
+    const found = allTabs.find((t) => t.id === tabId);
+    return found ? found.allowed : false;
+  };
 
   return (
     <div className="space-y-6">
@@ -147,6 +165,20 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
 
       {/* Main Tab View */}
       <div>
+        {!isTabAllowed(currentTab) && (
+          <div className="p-8 max-w-md mx-auto mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm text-center space-y-3">
+            <div className="w-12 h-12 mx-auto rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <h2 className="text-base font-bold text-slate-900 dark:text-white">
+              Overtime Page Access Restricted
+            </h2>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              Your account does not have permission to access this Overtime Management page. Contact your Super Admin to enable the corresponding page-wise permission under Users &amp; Permissions.
+            </p>
+          </div>
+        )}
+
         {currentTab === 'dashboard' && (
           <OvertimeDashboardTab
             onOpenNewRequest={() => {
@@ -159,17 +191,15 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
               setIsAttendanceModalOpen(true);
             }}
             onNavigateTab={(tab) => {
-              if (tab === 'requests') setCurrentTab('requests');
-              else if (tab === 'attendance') setCurrentTab('attendance');
-              else if (tab === 'batch_allocation') setCurrentTab('batch_allocation');
-              else if (tab === 'costing') setCurrentTab('payroll_costing_sync');
-              else if (tab === 'reports') setCurrentTab('reports');
-              else setCurrentTab(tab);
+              const target = tab === 'costing' ? 'payroll_costing_sync' : tab;
+              if (isTabAllowed(target)) {
+                setCurrentTab(target);
+              }
             }}
           />
         )}
 
-        {currentTab === 'requests' && (
+        {currentTab === 'requests' && canViewRequests && (
           <OvertimeRequestsTab
             onOpenNewRequest={() => {
               if (!canCreateRequest) return;
@@ -180,7 +210,10 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
               if (!canEditRequest) return;
               setEditingRequest(req);
             }}
-            onOpenApprovalModal={(req) => setApprovalModalRequest(req)}
+            onOpenApprovalModal={(req) => {
+              if (!canViewRequests) return;
+              setApprovalModalRequest(req);
+            }}
             onOpenBatchSplitModal={(req) => {
               if (!canAllocateBatch) return;
               setBatchSplitModalRequest(req);
@@ -188,7 +221,7 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
           />
         )}
 
-        {currentTab === 'attendance' && (
+        {currentTab === 'attendance' && canViewAttendance && (
           <OvertimeAttendanceTab
             onRecordNewAttendance={() => {
               if (!canRecordAttendance) return;
@@ -197,7 +230,7 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
           />
         )}
 
-        {currentTab === 'batch_allocation' && (
+        {currentTab === 'batch_allocation' && canViewBatchAllocation && (
           <OvertimeBatchAllocationTab
             onOpenSplitModal={(req) => {
               if (!canAllocateBatch) return;
@@ -206,15 +239,15 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
           />
         )}
 
-        {currentTab === 'payroll_costing_sync' && (
+        {currentTab === 'payroll_costing_sync' && canViewPayrollSync && (
           <OvertimePayrollCostingTab />
         )}
 
-        {currentTab === 'policies' && (
+        {currentTab === 'policies' && canViewPolicies && (
           <OvertimePolicySettingsTab />
         )}
 
-        {currentTab === 'reports' && (
+        {currentTab === 'reports' && canViewReports && (
           <OvertimeReportsTab />
         )}
       </div>
@@ -237,7 +270,7 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
         />
       )}
 
-      {approvalModalRequest && (
+      {approvalModalRequest && canViewRequests && (
         <OvertimeApprovalModal
           onClose={() => setApprovalModalRequest(null)}
           request={approvalModalRequest}

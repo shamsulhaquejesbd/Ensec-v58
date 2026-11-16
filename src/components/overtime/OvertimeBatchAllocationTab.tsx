@@ -10,7 +10,8 @@ import {
   Clock, 
   DollarSign, 
   SlidersHorizontal,
-  Plus
+  Plus,
+  ShieldAlert
 } from 'lucide-react';
 
 interface OvertimeBatchAllocationTabProps {
@@ -21,7 +22,8 @@ export const OvertimeBatchAllocationTab: React.FC<OvertimeBatchAllocationTabProp
   onOpenSplitModal,
 }) => {
   const { overtimeRequests, productionOrders, hasPageAction, currentUser } = useERP();
-  const canAllocateBatch = hasPageAction ? hasPageAction('overtime-management', 'allocate_batch') : currentUser.role === 'Super Admin';
+  const canViewPage = hasPageAction ? hasPageAction('overtime-management', 'view_batch_allocation') : currentUser.role === 'Super Admin';
+  const canAllocateBatch = (hasPageAction ? hasPageAction('overtime-management', 'allocate_batch') : currentUser.role === 'Super Admin') && canViewPage;
   const canViewCost = hasPageAction ? hasPageAction('overtime-management', 'view_cost') : currentUser.role === 'Super Admin';
   const [filterType, setFilterType] = useState<'all' | 'unsplit' | 'split' | 'overhead'>('all');
 
@@ -33,6 +35,22 @@ export const OvertimeBatchAllocationTab: React.FC<OvertimeBatchAllocationTabProp
     if (filterType === 'overhead') return req.batchAllocations?.some(a => a.isOverhead);
     return true;
   });
+
+  if (!canViewPage) {
+    return (
+      <div className="p-8 max-w-md mx-auto mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm text-center space-y-3">
+        <div className="w-12 h-12 mx-auto rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">
+          Batch Allocation &amp; Split Access Restricted
+        </h2>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Your account lacks <strong>Batch Allocation &amp; Split</strong> page permission under Overtime Management Hub. Contact your administrator to grant access.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

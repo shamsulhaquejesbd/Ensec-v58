@@ -11,7 +11,8 @@ import {
   Filter, 
   Check, 
   Cpu, 
-  ShieldCheck, 
+  ShieldCheck,
+  ShieldAlert,
   UserCheck,
   Plus
 } from 'lucide-react';
@@ -23,8 +24,9 @@ interface OvertimeAttendanceTabProps {
 export const OvertimeAttendanceTab: React.FC<OvertimeAttendanceTabProps> = ({ onRecordNewAttendance }) => {
   const { overtimeAttendances, verifyOvertimeAttendance, currentUser, hasPageAction } = useERP();
 
-  const canRecordAttendance = hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin';
-  const canVerifyAttendance = hasPageAction ? hasPageAction('overtime-management', 'verify_attendance') : currentUser.role === 'Super Admin';
+  const canViewPage = hasPageAction ? hasPageAction('overtime-management', 'view_attendance') : currentUser.role === 'Super Admin';
+  const canRecordAttendance = (hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin') && canViewPage;
+  const canVerifyAttendance = (hasPageAction ? hasPageAction('overtime-management', 'verify_attendance') : currentUser.role === 'Super Admin') && canViewPage;
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'pending' | 'flagged'>('all');
@@ -65,6 +67,22 @@ export const OvertimeAttendanceTab: React.FC<OvertimeAttendanceTabProps> = ({ on
       setVerifyingId(null);
     }, 400);
   };
+
+  if (!canViewPage) {
+    return (
+      <div className="p-8 max-w-md mx-auto mt-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm text-center space-y-3">
+        <div className="w-12 h-12 mx-auto rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">
+          OT Attendance &amp; Bio-Punches Access Restricted
+        </h2>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Your account lacks <strong>OT Attendance &amp; Bio-Punches</strong> page permission under Overtime Management Hub. Contact your administrator to grant access.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

@@ -1,4 +1,4 @@
-import { UserPagePermissionsMap } from './pagePermissions.ts';
+import { UserPagePermissionsMap, hasPageAction } from './pagePermissions.ts';
 
 export type Role =
   | 'Super Admin'
@@ -2009,17 +2009,16 @@ export function resolveUserPermissions(user?: Partial<User> | null, roleFallback
 
 export function hasModulePermission(user: User, moduleId: PageModuleId): boolean {
   if (user.role === 'Super Admin') return true;
+  if (moduleId === 'overtime-management' || moduleId.startsWith('overtime-')) {
+    return hasPageAction(user, moduleId, 'view');
+  }
   // If user has pagePermissions configured, check view action
   const pagePerms = user.permissions?.pagePermissions;
-  const canonicalModuleId = moduleId.startsWith('overtime-') ? 'overtime-management' : moduleId;
-  if (pagePerms && typeof pagePerms === 'object' && (pagePerms[canonicalModuleId] || pagePerms[moduleId])) {
-    return Boolean((pagePerms[canonicalModuleId] || pagePerms[moduleId])?.view);
+  if (pagePerms && typeof pagePerms === 'object' && pagePerms[moduleId]) {
+    return Boolean(pagePerms[moduleId]?.view);
   }
   const perms = resolveUserPermissions(user);
   const allowed = perms.allowedModules || [];
-  if (moduleId.startsWith('overtime-') || moduleId === 'overtime-management') {
-    return allowed.includes('overtime-management') || allowed.includes(moduleId) || allowed.some((m) => String(m).startsWith('overtime-'));
-  }
   return allowed.includes(moduleId);
 }
 

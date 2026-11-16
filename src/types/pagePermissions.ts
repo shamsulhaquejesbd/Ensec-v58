@@ -890,6 +890,48 @@ export const ERP_PAGE_PERMISSIONS_REGISTRY: ERPModuleCategory[] = [
           { key: 'view_cost', label: 'View Overtime Financials', description: 'Can inspect calculated hourly rates, wage multipliers, and BDT totals' },
           { key: 'configure_policy', label: 'Configure OT Policies', description: 'Can configure wage bases, standard monthly hours, and overtime multipliers' },
           { key: 'export', label: 'Export Overtime Reports', description: 'Can export monthly overtime and costing reports to Excel' },
+          {
+            key: 'view_requests',
+            label: 'OT Requests',
+            description: 'Can access the OT Requests page and overtime requisition queue',
+            subsection: 'Page-Wise Access Permissions',
+            group: 'Overtime Management Pages',
+          },
+          {
+            key: 'view_attendance',
+            label: 'OT Attendance & Bio-Punches',
+            description: 'Can access the OT Attendance & Bio-Punches page and punch logs',
+            subsection: 'Page-Wise Access Permissions',
+            group: 'Overtime Management Pages',
+          },
+          {
+            key: 'view_batch_allocation',
+            label: 'Batch Allocation & Split',
+            description: 'Can access the Batch Allocation & Split page and production batch splits',
+            subsection: 'Page-Wise Access Permissions',
+            group: 'Overtime Management Pages',
+          },
+          {
+            key: 'view_payroll_sync',
+            label: 'Payroll & Costing Dual-Sync',
+            description: 'Can access the Payroll & Costing Dual-Sync reconciliation page',
+            subsection: 'Page-Wise Access Permissions',
+            group: 'Overtime Management Pages',
+          },
+          {
+            key: 'view_policies',
+            label: 'Policy Configuration',
+            description: 'Can access the Policy Configuration page and employee policy directory',
+            subsection: 'Page-Wise Access Permissions',
+            group: 'Overtime Management Pages',
+          },
+          {
+            key: 'view_reports',
+            label: 'Reports & Export',
+            description: 'Can access the Reports & Export page and statutory overtime reports',
+            subsection: 'Page-Wise Access Permissions',
+            group: 'Overtime Management Pages',
+          },
         ],
       },
       {
@@ -1226,6 +1268,12 @@ export const PERMISSION_TEMPLATES: PermissionTemplate[] = [
             act.key === 'view_valuation' ||
             act.key === 'view_revenue' ||
             act.key === 'view_cost' ||
+            act.key === 'view_requests' ||
+            act.key === 'view_attendance' ||
+            act.key === 'view_batch_allocation' ||
+            act.key === 'view_payroll_sync' ||
+            act.key === 'view_policies' ||
+            act.key === 'view_reports' ||
             act.key === 'export'
           ) {
             map[page.id][act.key] = true;
@@ -1246,6 +1294,17 @@ export const PERMISSION_TEMPLATES: PermissionTemplate[] = [
  * 2. User has explicit true for [pageId][actionKey]
  * 3. Fallback: If pagePermissions not set, fallback gracefully to legacy allowedModules / role default
  */
+export const OVERTIME_SUBPAGE_ACTION_MAP: Record<string, string> = {
+  'overtime-requests': 'view_requests',
+  'overtime-attendance': 'view_attendance',
+  'overtime-batch-allocation': 'view_batch_allocation',
+  'overtime-sync': 'view_payroll_sync',
+  'overtime-policies': 'view_policies',
+  'overtime-reports': 'view_reports',
+};
+
+export const OVERTIME_SUBPAGE_ACTION_KEYS: readonly string[] = Object.values(OVERTIME_SUBPAGE_ACTION_MAP);
+
 export function hasPageAction(
   user: any,
   pageId: string,
@@ -1280,8 +1339,31 @@ export function hasPageAction(
   const canonicalPageId = PAGE_ID_ALIASES[pageId] || pageId;
 
   const pagePerms = user.permissions?.pagePermissions as UserPagePermissionsMap | undefined;
+  const otSubPageActionKey = OVERTIME_SUBPAGE_ACTION_MAP[pageId];
+
   if (pagePerms && typeof pagePerms === 'object') {
     const pageObj = pagePerms[canonicalPageId] || pagePerms[pageId];
+
+    // Enforce the 6 page-wise Overtime Management permissions when routing by sidebar ID or sub-page key
+    if (canonicalPageId === 'overtime-management') {
+      if (pageObj && typeof pageObj === 'object') {
+        if (actionKey === 'view' && otSubPageActionKey) {
+          if (!pageObj.view) return false;
+          if (pageObj[otSubPageActionKey] !== undefined) {
+            return Boolean(pageObj[otSubPageActionKey]);
+          }
+          return true; // Preserve access for existing users saved before the 6 sub-page keys existed
+        }
+        if (OVERTIME_SUBPAGE_ACTION_KEYS.includes(actionKey)) {
+          if (!pageObj.view) return false;
+          if (pageObj[actionKey] !== undefined) {
+            return Boolean(pageObj[actionKey]);
+          }
+          return true;
+        }
+      }
+    }
+
     if (pageObj && typeof pageObj === 'object') {
       if (pageObj[actionKey] !== undefined) {
         return Boolean(pageObj[actionKey]);
@@ -1323,9 +1405,12 @@ export function hasPageAction(
     }
   }
 
-  // Fallback: If action is 'view', check if module is in allowedModules
+  // Fallback: If action is 'view' (or one of the 6 Overtime sub-page keys), check allowedModules
   const allowed = user.permissions?.allowedModules || [];
   if (actionKey === 'view') {
+    if (otSubPageActionKey) {
+      return allowed.includes(pageId) || allowed.includes('overtime-management');
+    }
     // If exact page ID or parent module prefix is in allowedModules
     const hasMod =
       allowed.includes(pageId) ||
@@ -1347,6 +1432,14 @@ export function hasPageAction(
       (pageId === 'finance-cashbook' && allowed.some((p: string) => p.startsWith('finance-')));
 
     return hasMod;
+  }
+
+  if (canonicalPageId === 'overtime-management' && OVERTIME_SUBPAGE_ACTION_KEYS.includes(actionKey)) {
+    const matchingChild = Object.entries(OVERTIME_SUBPAGE_ACTION_MAP).find(([, v]) => v === actionKey)?.[0];
+    return Boolean(
+      allowed.includes('overtime-management') ||
+      (matchingChild && allowed.includes(matchingChild))
+    );
   }
 
   // Default to false for modifications if not explicitly granted

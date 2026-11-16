@@ -33,6 +33,11 @@ import {
   sanitizeMaterialIssueRecordForUser,
   sanitizeProductionOrderForUser,
 } from './src/lib/manufacturingPermissions.ts';
+import {
+  authorizeOvertimeSubPage,
+  resolveOvertimePermissions,
+  sanitizeOvertimeRecordForUser,
+} from './src/lib/overtimePermissions.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -934,6 +939,9 @@ export function createAppServer() {
   const mfgIssuesCache = new Map<string, any>();
   const mfgRawMaterialsCache = new Map<string, any>();
   const mfgBatchesCache = new Map<string, any>();
+  const overtimeRequestsCache = new Map<string, any>();
+  const overtimeAttendancesCache = new Map<string, any>();
+  const overtimePoliciesCache = new Map<string, any>();
   const mobileTransactionsStore = {
     orders: [] as any[],
     customers: [] as any[],
@@ -1248,6 +1256,27 @@ export function createAppServer() {
       for (const b of body.inventoryBatches) {
         if (b && (b.id || b.batchNumber)) {
           mfgBatchesCache.set(String(b.id || b.batchNumber), b);
+        }
+      }
+    }
+    if (Array.isArray(body.overtimeRequests)) {
+      for (const reqItem of body.overtimeRequests) {
+        if (reqItem && (reqItem.id || reqItem.requestNumber)) {
+          overtimeRequestsCache.set(String(reqItem.id || reqItem.requestNumber), reqItem);
+        }
+      }
+    }
+    if (Array.isArray(body.overtimeAttendances)) {
+      for (const att of body.overtimeAttendances) {
+        if (att && att.id) {
+          overtimeAttendancesCache.set(String(att.id), att);
+        }
+      }
+    }
+    if (Array.isArray(body.overtimePolicies)) {
+      for (const pol of body.overtimePolicies) {
+        if (pol && pol.id) {
+          overtimePoliciesCache.set(String(pol.id), pol);
         }
       }
     }
@@ -1688,6 +1717,324 @@ export function createAppServer() {
       success: true,
       issue: sanitizedIssue,
     });
+  });
+
+  // ============================================================================
+  // OVERTIME MANAGEMENT HUB — PAGE-WISE AUTHORIZATION & API ROUTES
+  // ============================================================================
+  const loadAuthoritativeOvertimeRequests = async (): Promise<any[]> => {
+    let list: any[] = Array.from(overtimeRequestsCache.values());
+    if (serverSupabase) {
+      try {
+        const [{ data: reqRows }, { data: allocRows }] = await Promise.all([
+          serverSupabase.from('overtime_requests').select('*').order('created_at', { ascending: false }),
+          serverSupabase.from('overtime_batch_allocations').select('*').order('created_at', { ascending: true }),
+        ]);
+        if (Array.isArray(reqRows) && reqRows.length > 0) {
+          const allocByReq = new Map<string, any[]>();
+          if (Array.isArray(allocRows)) {
+            for (const a of allocRows) {
+              const arr = allocByReq.get(String(a.request_id)) || [];
+              arr.push({
+                id: String(a.id),
+                productionOrderId: a.production_order_id || '',
+                productionOrderNumber: a.production_order_number || '',
+                productionBatchNumber: a.production_batch_number || '',
+                productId: a.product_id || undefined,
+                productName: a.product_name || '',
+                processType: a.process_type || 'Spot Welding & Busbar',
+                allocatedHours: Number(a.allocated_hours) || 0,
+                hourlyRateBDT: Number(a.hourly_rate_bdt) || 0,
+                allocatedCostBDT: Number(a.allocated_cost_bdt) || 0,
+                isOverhead: Boolean(a.is_overhead),
+                notes: a.notes || undefined,
+              });
+              allocByReq.set(String(a.request_id), arr);
+            }
+          }
+          list = reqRows.map((r: any) => ({
+            id: String(r.id),
+            requestNumber: r.request_number,
+            employeeId: String(r.employee_id),
+            employeeCode: r.employee_code || '',
+            employeeName: r.employee_name || '',
+            department: r.department || '',
+            designation: r.designation || '',
+            employeeCategory: r.employee_category || undefined,
+            overtimeDate: String(r.overtime_date),
+            purposeCategory: r.purpose_category || 'Direct Production',
+            productionOrderId: r.production_order_id || undefined,
+            productionOrderNumber: r.production_order_number || undefined,
+            productionBatchNumber: r.production_batch_number || undefined,
+            productName: r.product_name || undefined,
+            projectPurpose: r.project_purpose || '',
+            expectedStartTime: r.expected_start_time || '18:00',
+            expectedEndTime: r.expected_end_time || '22:00',
+            expectedHours: Number(r.expected_hours) || 0,
+            actualOvertimeHours: r.actual_overtime_hours !== null && r.actual_overtime_hours !== undefined ? Number(r.actual_overtime_hours) : undefined,
+            overtimeReason: r.overtime_reason || '',
+            requestedBy: r.requested_by || '',
+            requestedAt: r.requested_at || r.created_at || new Date().toISOString(),
+            status: r.status || 'Pending Supervisor',
+            basicSalaryBDT: Number(r.basic_salary_bdt) || 0,
+            hourlyRateBDT: Number(r.hourly_rate_bdt) || 0,
+            overtimeMultiplier: r.overtime_multiplier !== null && r.overtime_multiplier !== undefined ? Number(r.overtime_multiplier) : 2.0,
+            calculatedOvertimeAmountBDT: Number(r.calculated_overtime_amount_bdt) || 0,
+            batchAllocations: allocByReq.get(String(r.id)) || [],
+            isPayrollProcessed: Boolean(r.is_payroll_processed),
+            isCostingAllocated: Boolean(r.is_costing_allocated),
+          }));
+        }
+      } catch {
+        // Fallback to in-memory cache
+      }
+    }
+    return list;
+  };
+
+  app.get('/api/overtime/permissions', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const permissions = resolveOvertimePermissions(caller);
+    res.json({ authenticated: Boolean(caller), permissions });
+  });
+
+  app.get('/api/overtime/requests', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'requests');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_REQUESTS_FORBIDDEN', error: auth.reason });
+    }
+    const requests = (await loadAuthoritativeOvertimeRequests()).map((r) => sanitizeOvertimeRecordForUser(r, caller));
+    res.json({ allowed: true, requests });
+  });
+
+  app.post('/api/overtime/requests', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'requests');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_REQUESTS_FORBIDDEN', error: auth.reason });
+    }
+    const perms = resolveOvertimePermissions(caller);
+    if (!perms.createRequest) {
+      return res.status(403).json({ allowed: false, code: 'OVERTIME_CREATE_FORBIDDEN', error: 'Forbidden: Create OT Request permission required.' });
+    }
+    const record = { ...(req.body || {}), id: req.body?.id || `otr-srv-${Date.now()}` };
+    overtimeRequestsCache.set(String(record.id), record);
+    return res.status(200).json({ allowed: true, request: sanitizeOvertimeRecordForUser(record, caller) });
+  });
+
+  app.put('/api/overtime/requests/:id', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'requests');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_REQUESTS_FORBIDDEN', error: auth.reason });
+    }
+    const perms = resolveOvertimePermissions(caller);
+    if (!perms.editRequest) {
+      return res.status(403).json({ allowed: false, code: 'OVERTIME_EDIT_FORBIDDEN', error: 'Forbidden: Edit OT Request permission required.' });
+    }
+    const id = String(req.params.id || '');
+    const existing = overtimeRequestsCache.get(id) || {};
+    const updated = { ...existing, ...(req.body || {}), id, updatedAt: new Date().toISOString() };
+    overtimeRequestsCache.set(id, updated);
+    return res.status(200).json({ allowed: true, request: sanitizeOvertimeRecordForUser(updated, caller) });
+  });
+
+  app.delete('/api/overtime/requests/:id', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'requests');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_REQUESTS_FORBIDDEN', error: auth.reason });
+    }
+    const perms = resolveOvertimePermissions(caller);
+    if (!perms.editRequest && !perms.approveFinal) {
+      return res.status(403).json({ allowed: false, code: 'OVERTIME_DELETE_FORBIDDEN', error: 'Forbidden: Edit or Final Approval clearance required to delete OT requests.' });
+    }
+    const id = String(req.params.id || '');
+    overtimeRequestsCache.delete(id);
+    if (serverSupabase) {
+      try {
+        await serverSupabase.from('overtime_requests').delete().eq('id', id);
+      } catch {
+        // Ignore if unavailable
+      }
+    }
+    return res.status(200).json({ allowed: true, deletedId: id });
+  });
+
+  app.post('/api/overtime/requests/:id/workflow', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'requests');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_REQUESTS_FORBIDDEN', error: auth.reason });
+    }
+    const perms = resolveOvertimePermissions(caller);
+    const step = String(req.body?.step || '').toUpperCase();
+    const stepOk =
+      (step === 'SUPERVISOR' && (perms.approveSupervisor || perms.approveFinal)) ||
+      (step === 'PRODUCTION' && (perms.approveProduction || perms.approveFinal)) ||
+      (step === 'HR' && (perms.verifyHrAccounts || perms.approveFinal)) ||
+      (step === 'FINAL' && perms.approveFinal);
+    if (!stepOk) {
+      return res.status(403).json({ allowed: false, code: 'OVERTIME_WORKFLOW_FORBIDDEN', error: `Forbidden: Missing approval clearance for step ${step || 'UNKNOWN'}.` });
+    }
+    const id = String(req.params.id || '');
+    const existing = overtimeRequestsCache.get(id) || { id };
+    return res.status(200).json({ allowed: true, request: sanitizeOvertimeRecordForUser(existing, caller) });
+  });
+
+  app.get('/api/overtime/attendances', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'attendance');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_ATTENDANCE_FORBIDDEN', error: auth.reason });
+    }
+    let attendances: any[] = Array.from(overtimeAttendancesCache.values());
+    if (serverSupabase) {
+      try {
+        const { data } = await serverSupabase.from('overtime_attendances').select('*').order('date', { ascending: false });
+        if (Array.isArray(data) && data.length > 0) {
+          attendances = data.map((a: any) => ({
+            id: String(a.id),
+            requestId: a.request_id || undefined,
+            requestNumber: a.request_number || undefined,
+            employeeId: String(a.employee_id),
+            employeeCode: a.employee_code || '',
+            employeeName: a.employee_name || '',
+            department: a.department || '',
+            designation: a.designation || '',
+            date: String(a.date),
+            overtimeCheckInTime: a.overtime_check_in_time || '',
+            overtimeCheckOutTime: a.overtime_check_out_time || '',
+            isOvernight: Boolean(a.is_overnight),
+            actualOvertimeHours: Number(a.actual_overtime_hours) || 0,
+            isVerified: Boolean(a.is_verified),
+            verifiedBy: a.verified_by || undefined,
+            syncSource: a.sync_source || 'Manual',
+          }));
+        }
+      } catch {
+        // Fallback to cache
+      }
+    }
+    res.json({ allowed: true, attendances });
+  });
+
+  app.post('/api/overtime/attendances', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'attendance');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_ATTENDANCE_FORBIDDEN', error: auth.reason });
+    }
+    const perms = resolveOvertimePermissions(caller);
+    if (!perms.recordAttendance) {
+      return res.status(403).json({ allowed: false, code: 'OVERTIME_RECORD_ATTENDANCE_FORBIDDEN', error: 'Forbidden: Record OT Attendance permission required.' });
+    }
+    const record = { ...(req.body || {}), id: req.body?.id || `ot-att-srv-${Date.now()}` };
+    overtimeAttendancesCache.set(String(record.id), record);
+    return res.status(200).json({ allowed: true, attendance: record });
+  });
+
+  app.post('/api/overtime/attendances/:id/verify', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'attendance');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_ATTENDANCE_FORBIDDEN', error: auth.reason });
+    }
+    const perms = resolveOvertimePermissions(caller);
+    if (!perms.verifyAttendance) {
+      return res.status(403).json({ allowed: false, code: 'OVERTIME_VERIFY_ATTENDANCE_FORBIDDEN', error: 'Forbidden: Verify Biometric OT Punch permission required.' });
+    }
+    const id = String(req.params.id || '');
+    const existing = overtimeAttendancesCache.get(id) || { id };
+    const updated = { ...existing, isVerified: true, verifiedBy: caller?.name || 'Supervisor', verificationDate: new Date().toISOString() };
+    overtimeAttendancesCache.set(id, updated);
+    return res.status(200).json({ allowed: true, attendance: updated });
+  });
+
+  app.get('/api/overtime/batch-allocations', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'batch_allocation');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_BATCH_ALLOCATION_FORBIDDEN', error: auth.reason });
+    }
+    const requests = (await loadAuthoritativeOvertimeRequests()).map((r) => sanitizeOvertimeRecordForUser(r, caller));
+    res.json({ allowed: true, requests });
+  });
+
+  app.put('/api/overtime/batch-allocations/:requestId', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'batch_allocation');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_BATCH_ALLOCATION_FORBIDDEN', error: auth.reason });
+    }
+    const perms = resolveOvertimePermissions(caller);
+    if (!perms.allocateBatch) {
+      return res.status(403).json({ allowed: false, code: 'OVERTIME_ALLOCATE_BATCH_FORBIDDEN', error: 'Forbidden: Allocate Overtime to Batches permission required.' });
+    }
+    const requestId = String(req.params.requestId || '');
+    const allocations = Array.isArray(req.body?.allocations) ? req.body.allocations : [];
+    const existing = overtimeRequestsCache.get(requestId) || { id: requestId };
+    const updated = { ...existing, batchAllocations: allocations, isCostingAllocated: allocations.length > 0, updatedAt: new Date().toISOString() };
+    overtimeRequestsCache.set(requestId, updated);
+    return res.status(200).json({ allowed: true, request: sanitizeOvertimeRecordForUser(updated, caller) });
+  });
+
+  app.get('/api/overtime/payroll-sync', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'payroll_costing_sync');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_PAYROLL_SYNC_FORBIDDEN', error: auth.reason });
+    }
+    const requests = (await loadAuthoritativeOvertimeRequests())
+      .filter((r) => r.status === 'Final Approved')
+      .map((r) => sanitizeOvertimeRecordForUser(r, caller));
+    res.json({ allowed: true, requests });
+  });
+
+  app.get('/api/overtime/policies', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'policies');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_POLICIES_FORBIDDEN', error: auth.reason });
+    }
+    let policies: any[] = Array.from(overtimePoliciesCache.values());
+    if (serverSupabase && policies.length === 0) {
+      try {
+        const { data } = await serverSupabase.from('overtime_policies').select('*').order('created_at', { ascending: true });
+        if (Array.isArray(data)) policies = data;
+      } catch {
+        // Fallback to cache
+      }
+    }
+    res.json({ allowed: true, policies });
+  });
+
+  app.put('/api/overtime/policies/:id', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'policies');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_POLICIES_FORBIDDEN', error: auth.reason });
+    }
+    const perms = resolveOvertimePermissions(caller);
+    if (!perms.configurePolicy) {
+      return res.status(403).json({ allowed: false, code: 'OVERTIME_CONFIGURE_POLICY_FORBIDDEN', error: 'Forbidden: Configure OT Policy permission required.' });
+    }
+    const id = String(req.params.id || '');
+    const existing = overtimePoliciesCache.get(id) || {};
+    const updated = { ...existing, ...(req.body || {}), id, updatedAt: new Date().toISOString(), updatedBy: caller?.name };
+    overtimePoliciesCache.set(id, updated);
+    return res.status(200).json({ allowed: true, policy: updated });
+  });
+
+  app.get('/api/overtime/reports', async (req, res) => {
+    const caller = await resolveRequestUser(req);
+    const auth = authorizeOvertimeSubPage(caller, 'reports');
+    if (!auth.allowed) {
+      return res.status(caller ? 403 : 401).json({ allowed: false, code: 'OVERTIME_REPORTS_FORBIDDEN', error: auth.reason });
+    }
+    const requests = (await loadAuthoritativeOvertimeRequests()).map((r) => sanitizeOvertimeRecordForUser(r, caller));
+    res.json({ allowed: true, requests });
   });
 
   // Authenticated Mobile Field Force Transaction Endpoints (Enforces active ERP User <-> Employee Identity)

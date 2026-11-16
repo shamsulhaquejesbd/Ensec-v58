@@ -46,8 +46,14 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
     currentUser,
   } = useERP();
 
-  const canCreateRequest = hasPageAction ? hasPageAction('overtime-management', 'create_request') : currentUser.role === 'Super Admin';
-  const canRecordAttendance = hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin';
+  const canViewRequests = hasPageAction ? hasPageAction('overtime-management', 'view_requests') : currentUser.role === 'Super Admin';
+  const canViewAttendance = hasPageAction ? hasPageAction('overtime-management', 'view_attendance') : currentUser.role === 'Super Admin';
+  const canViewBatchAllocation = hasPageAction ? hasPageAction('overtime-management', 'view_batch_allocation') : currentUser.role === 'Super Admin';
+  const canViewPayrollSync = hasPageAction ? hasPageAction('overtime-management', 'view_payroll_sync') : currentUser.role === 'Super Admin';
+  const canViewReports = hasPageAction ? hasPageAction('overtime-management', 'view_reports') : currentUser.role === 'Super Admin';
+
+  const canCreateRequest = (hasPageAction ? hasPageAction('overtime-management', 'create_request') : currentUser.role === 'Super Admin') && canViewRequests;
+  const canRecordAttendance = (hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin') && canViewAttendance;
   const canViewCost = hasPageAction ? hasPageAction('overtime-management', 'view_cost') : currentUser.role === 'Super Admin';
 
   // 1. KPI Calculations
@@ -205,13 +211,15 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
               <span>Record OT Attendance</span>
             </button>
           )}
-          <button
-            onClick={() => onNavigateTab('reports')}
-            className="py-2 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-            <span>Reports</span>
-          </button>
+          {canViewReports && (
+            <button
+              onClick={() => onNavigateTab('reports')}
+              className="py-2 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+              <span>Reports</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -459,61 +467,69 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
       </div>
 
       {/* Quick Access Action Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div
-          onClick={() => onNavigateTab('requests')}
-          className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-500 cursor-pointer shadow-xs transition-all group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600">
-              <ShieldCheck className="w-4 h-4" />
+      {(canViewRequests || canViewBatchAllocation || canViewPayrollSync) && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {canViewRequests && (
+            <div
+              onClick={() => onNavigateTab('requests')}
+              className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-500 cursor-pointer shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-950 text-blue-600">
+                  <ShieldCheck className="w-4 h-4" />
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
+              </div>
+              <h4 className="font-bold text-xs text-slate-900 dark:text-white mt-2">
+                Requisition Approvals
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Process pending supervisor, production manager, and HR wage verification requests.
+              </p>
             </div>
-            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-colors" />
-          </div>
-          <h4 className="font-bold text-xs text-slate-900 dark:text-white mt-2">
-            Requisition Approvals
-          </h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Process pending supervisor, production manager, and HR wage verification requests.
-          </p>
-        </div>
+          )}
 
-        <div
-          onClick={() => onNavigateTab('batch_allocation')}
-          className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500 cursor-pointer shadow-xs transition-all group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600">
-              <Cpu className="w-4 h-4" />
+          {canViewBatchAllocation && (
+            <div
+              onClick={() => onNavigateTab('batch_allocation')}
+              className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-indigo-500 cursor-pointer shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600">
+                  <Cpu className="w-4 h-4" />
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
+              </div>
+              <h4 className="font-bold text-xs text-slate-900 dark:text-white mt-2">
+                Production Batch Allocations
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Split technician overtime hours across active assembly orders and calculate unit costing.
+              </p>
             </div>
-            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 transition-colors" />
-          </div>
-          <h4 className="font-bold text-xs text-slate-900 dark:text-white mt-2">
-            Production Batch Allocations
-          </h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Split technician overtime hours across active assembly orders and calculate unit costing.
-          </p>
-        </div>
+          )}
 
-        <div
-          onClick={() => onNavigateTab('payroll_costing_sync')}
-          className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-500 cursor-pointer shadow-xs transition-all group"
-        >
-          <div className="flex items-center justify-between">
-            <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600">
-              <DollarSign className="w-4 h-4" />
+          {canViewPayrollSync && (
+            <div
+              onClick={() => onNavigateTab('payroll_costing_sync')}
+              className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-emerald-500 cursor-pointer shadow-xs transition-all group"
+            >
+              <div className="flex items-center justify-between">
+                <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-950 text-emerald-600">
+                  <DollarSign className="w-4 h-4" />
+                </div>
+                <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors" />
+              </div>
+              <h4 className="font-bold text-xs text-slate-900 dark:text-white mt-2">
+                Payroll &amp; Costing Synchronization
+              </h4>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Audit salary sheet entries against WIP batch absorption to prevent double-counting.
+              </p>
             </div>
-            <ArrowUpRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 transition-colors" />
-          </div>
-          <h4 className="font-bold text-xs text-slate-900 dark:text-white mt-2">
-            Payroll &amp; Costing Synchronization
-          </h4>
-          <p className="text-[11px] text-slate-500 mt-0.5">
-            Audit salary sheet entries against WIP batch absorption to prevent double-counting.
-          </p>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 };
