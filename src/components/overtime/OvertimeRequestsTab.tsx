@@ -30,6 +30,7 @@ import {
   FileSpreadsheet,
   ChevronLeft,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import { OvertimeRequest, OvertimeStatus } from '../../types/overtime.ts';
 
@@ -77,6 +78,7 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [batchFilter, setBatchFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pendingDeleteRequest, setPendingDeleteRequest] = useState<OvertimeRequest | null>(null);
   const PAGE_SIZE = 10;
 
   // Filtered List
@@ -421,7 +423,8 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
                         {!req.isPayrollProcessed &&
                           ((canEditRequest && req.status !== 'Final Approved' && req.status !== 'Rejected') || canApproveFinal) && (
                             <button
-                              onClick={() => deleteOvertimeRequest(req.id)}
+                              type="button"
+                              onClick={() => setPendingDeleteRequest(req)}
                               title="Delete Request"
                               className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-500 transition-colors"
                             >
@@ -494,6 +497,102 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {pendingDeleteRequest && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 backdrop-blur-xs p-4"
+          onClick={() => setPendingDeleteRequest(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-5 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 rounded-xl bg-rose-100 dark:bg-rose-950 text-rose-600 dark:text-rose-400">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                    Confirm Delete Overtime Request
+                  </h3>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    This action cannot be undone.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPendingDeleteRequest(null)}
+                aria-label="Close confirmation dialog"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-3 text-xs">
+              <p className="text-slate-600 dark:text-slate-300 leading-relaxed">
+                Are you sure you want to delete overtime request{' '}
+                <span className="font-mono font-bold text-slate-900 dark:text-white">
+                  {pendingDeleteRequest.requestNumber}
+                </span>
+                ?
+              </p>
+
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Employee:</span>
+                  <span className="font-bold text-slate-900 dark:text-white">
+                    {pendingDeleteRequest.employeeName} ({pendingDeleteRequest.employeeCode})
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Overtime Date:</span>
+                  <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">
+                    {pendingDeleteRequest.overtimeDate}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">OT Hours:</span>
+                  <span className="font-mono font-semibold text-slate-700 dark:text-slate-200">
+                    {pendingDeleteRequest.actualOvertimeHours || pendingDeleteRequest.expectedHours} hrs
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-slate-500">Status:</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-200">
+                    {pendingDeleteRequest.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-5 py-3.5 bg-slate-50 dark:bg-slate-800/40 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setPendingDeleteRequest(null)}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 text-xs font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const idToDelete = pendingDeleteRequest.id;
+                  setPendingDeleteRequest(null);
+                  deleteOvertimeRequest(idToDelete);
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Yes, Delete Request</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
