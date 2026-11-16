@@ -1090,7 +1090,7 @@ export const OvertimeReportsTab: React.FC = () => {
                   : 'bg-white border-slate-200 hover:border-slate-300'
               }`}
             >
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-2">
                 <span className={`p-1.5 rounded-lg ${isActive ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
                   <Icon className="w-4 h-4" />
                 </span>
@@ -1098,9 +1098,6 @@ export const OvertimeReportsTab: React.FC = () => {
                   {rep.name}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-500 line-clamp-2 leading-relaxed">
-                {rep.desc}
-              </p>
             </button>
           );
         })}
