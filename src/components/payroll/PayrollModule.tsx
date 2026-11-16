@@ -6,7 +6,7 @@
  * Complete 13-Section Architecture with Double-Entry Accounting Integration
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   DollarSign,
   Plus,
@@ -34,6 +34,7 @@ import {
   Layers,
   PieChart,
   BarChart3,
+  ChevronLeft,
   ChevronRight,
   Filter,
   Briefcase,
@@ -167,6 +168,8 @@ export const PayrollModule: React.FC = () => {
   const [showStructureModal, setShowStructureModal] = useState<boolean>(false);
   const [editingStructure, setEditingStructure] = useState<EmployeeSalaryStructure | null>(null);
   const [selectedEmployeeForStructure, setSelectedEmployeeForStructure] = useState<FieldForceRep | null>(null);
+  const [salaryStructurePage, setSalaryStructurePage] = useState<number>(1);
+  const SALARY_STRUCTURE_PAGE_SIZE = 10;
 
   const [showAttendanceModal, setShowAttendanceModal] = useState<boolean>(false);
   const [showBulkAttendanceModal, setShowBulkAttendanceModal] = useState<boolean>(false);
@@ -586,6 +589,53 @@ export const PayrollModule: React.FC = () => {
     XLSX.utils.book_append_sheet(wb, wsRejected, 'Rejected GPS Attempts');
     XLSX.writeFile(wb, `Ensec_Attendance_Report_${attDateFrom}_to_${attDateTo}.xlsx`);
   };
+
+  const salaryStructurePagination = useMemo(() => {
+    const totalEmployees = fieldForceReps.length;
+    const totalPages = Math.max(1, Math.ceil(totalEmployees / SALARY_STRUCTURE_PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, salaryStructurePage), totalPages);
+    const startIndex = (safePage - 1) * SALARY_STRUCTURE_PAGE_SIZE;
+    const paginatedEmployees = fieldForceReps.slice(startIndex, startIndex + SALARY_STRUCTURE_PAGE_SIZE);
+    const startRecord = totalEmployees === 0 ? 0 : startIndex + 1;
+    const endRecord = Math.min(safePage * SALARY_STRUCTURE_PAGE_SIZE, totalEmployees);
+
+    const pageNumbers: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
+    } else if (safePage <= 4) {
+      for (let i = 1; i <= 5; i++) pageNumbers.push(i);
+      pageNumbers.push('...');
+      pageNumbers.push(totalPages);
+    } else if (safePage >= totalPages - 3) {
+      pageNumbers.push(1);
+      pageNumbers.push('...');
+      for (let i = totalPages - 4; i <= totalPages; i++) pageNumbers.push(i);
+    } else {
+      pageNumbers.push(1);
+      pageNumbers.push('...');
+      pageNumbers.push(safePage - 1);
+      pageNumbers.push(safePage);
+      pageNumbers.push(safePage + 1);
+      pageNumbers.push('...');
+      pageNumbers.push(totalPages);
+    }
+
+    return {
+      totalEmployees,
+      totalPages,
+      safePage,
+      paginatedEmployees,
+      startRecord,
+      endRecord,
+      pageNumbers,
+    };
+  }, [fieldForceReps, salaryStructurePage]);
+
+  useEffect(() => {
+    if (salaryStructurePage > salaryStructurePagination.totalPages) {
+      setSalaryStructurePage(salaryStructurePagination.totalPages);
+    }
+  }, [salaryStructurePage, salaryStructurePagination.totalPages]);
 
   // ==========================================
   // SECTION 1: DASHBOARD METRICS & CALCULATIONS
@@ -1151,94 +1201,161 @@ export const PayrollModule: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                  {fieldForceReps.map((emp) => {
-                    const str = salaryStructures.find((s) => s.employeeId === emp.id);
-                    const basic = str?.basicSalaryBDT ?? emp.basicSalaryBDT ?? 30000;
-                    const house = str?.houseRentBDT ?? Math.round(basic * 0.5);
-                    const med = str?.medicalAllowanceBDT ?? Math.round(basic * 0.1);
-                    const conv = str?.conveyanceAllowanceBDT ?? emp.conveyanceBDT ?? 0;
-                    const mob = str?.mobileAllowanceBDT ?? emp.mobileAllowanceBDT ?? 0;
-                    const spec = str?.specialAllowanceBDT ?? 0;
-                    const other = str?.otherAllowancesBDT ?? 0;
-                    const gross = basic + house + med + conv + mob + spec + other;
+                  {salaryStructurePagination.paginatedEmployees.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="py-10 text-center text-slate-500 dark:text-slate-400">
+                        No employees found.
+                      </td>
+                    </tr>
+                  ) : (
+                    salaryStructurePagination.paginatedEmployees.map((emp) => {
+                      const str = salaryStructures.find((s) => s.employeeId === emp.id);
+                      const basic = str?.basicSalaryBDT ?? emp.basicSalaryBDT ?? 30000;
+                      const house = str?.houseRentBDT ?? Math.round(basic * 0.5);
+                      const med = str?.medicalAllowanceBDT ?? Math.round(basic * 0.1);
+                      const conv = str?.conveyanceAllowanceBDT ?? emp.conveyanceBDT ?? 0;
+                      const mob = str?.mobileAllowanceBDT ?? emp.mobileAllowanceBDT ?? 0;
+                      const spec = str?.specialAllowanceBDT ?? 0;
+                      const other = str?.otherAllowancesBDT ?? 0;
+                      const gross = basic + house + med + conv + mob + spec + other;
 
-                    return (
-                      <tr key={emp.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
-                        <td className="py-3 px-4">
-                          <div className="font-bold text-slate-900 dark:text-white">{emp.name}</div>
-                          <span className="font-mono text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
-                            {emp.code}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-medium text-slate-700 dark:text-slate-300 block">
-                            {emp.designation}
-                          </span>
-                          <span className="text-[10px] text-slate-400">{emp.department || 'Operations'}</span>
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-semibold">
-                          ৳ {basic.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-600 dark:text-slate-400">
-                          ৳ {house.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-600 dark:text-slate-400">
-                          ৳ {med.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-600 dark:text-slate-400">
-                          ৳ {conv.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono text-slate-600 dark:text-slate-400">
-                          ৳ {mob.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 text-right font-mono font-black text-slate-900 dark:text-white">
-                          ৳ {gross.toLocaleString()}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-                            {str?.history?.length || 1} records
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedEmployeeForStructure(emp);
-                              if (str) {
-                                setEditingStructure(str);
-                                setStrBasic(str.basicSalaryBDT ?? 0);
-                                setStrHouseRent(str.houseRentBDT ?? 0);
-                                setStrMedical(str.medicalAllowanceBDT ?? 0);
-                                setStrConveyance(str.conveyanceAllowanceBDT ?? 0);
-                                setStrMobile(str.mobileAllowanceBDT ?? 0);
-                                setStrSpecial(str.specialAllowanceBDT ?? 0);
-                                setStrOther(str.otherAllowancesBDT ?? 0);
-                                setStrEffectiveFrom(str.effectiveFrom || new Date().toISOString().slice(0, 10));
-                              } else {
-                                const defaultBasic = emp.basicSalaryBDT ?? 30000;
-                                setEditingStructure(null);
-                                setStrBasic(defaultBasic);
-                                setStrHouseRent(Math.round(defaultBasic * 0.5));
-                                setStrMedical(Math.round(defaultBasic * 0.1));
-                                setStrConveyance(emp.conveyanceBDT ?? 0);
-                                setStrMobile(emp.mobileAllowanceBDT ?? 0);
-                                setStrSpecial(0);
-                                setStrOther(0);
-                                setStrEffectiveFrom(new Date().toISOString().slice(0, 10));
-                              }
-                              setStrRevisionReason('');
-                              setShowStructureModal(true);
-                            }}
-                            className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 text-[11px] font-bold"
-                          >
-                            Edit Structure
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                      return (
+                        <tr key={emp.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-slate-900 dark:text-white">{emp.name}</div>
+                            <span className="font-mono text-[10px] text-blue-600 dark:text-blue-400 font-semibold">
+                              {emp.code}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-medium text-slate-700 dark:text-slate-300 block">
+                              {emp.designation}
+                            </span>
+                            <span className="text-[10px] text-slate-400">{emp.department || 'Operations'}</span>
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-semibold">
+                            ৳ {basic.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-slate-600 dark:text-slate-400">
+                            ৳ {house.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-slate-600 dark:text-slate-400">
+                            ৳ {med.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-slate-600 dark:text-slate-400">
+                            ৳ {conv.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-slate-600 dark:text-slate-400">
+                            ৳ {mob.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono font-black text-slate-900 dark:text-white">
+                            ৳ {gross.toLocaleString()}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                              {str?.history?.length || 1} records
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedEmployeeForStructure(emp);
+                                if (str) {
+                                  setEditingStructure(str);
+                                  setStrBasic(str.basicSalaryBDT ?? 0);
+                                  setStrHouseRent(str.houseRentBDT ?? 0);
+                                  setStrMedical(str.medicalAllowanceBDT ?? 0);
+                                  setStrConveyance(str.conveyanceAllowanceBDT ?? 0);
+                                  setStrMobile(str.mobileAllowanceBDT ?? 0);
+                                  setStrSpecial(str.specialAllowanceBDT ?? 0);
+                                  setStrOther(str.otherAllowancesBDT ?? 0);
+                                  setStrEffectiveFrom(str.effectiveFrom || new Date().toISOString().slice(0, 10));
+                                } else {
+                                  const defaultBasic = emp.basicSalaryBDT ?? 30000;
+                                  setEditingStructure(null);
+                                  setStrBasic(defaultBasic);
+                                  setStrHouseRent(Math.round(defaultBasic * 0.5));
+                                  setStrMedical(Math.round(defaultBasic * 0.1));
+                                  setStrConveyance(emp.conveyanceBDT ?? 0);
+                                  setStrMobile(emp.mobileAllowanceBDT ?? 0);
+                                  setStrSpecial(0);
+                                  setStrOther(0);
+                                  setStrEffectiveFrom(new Date().toISOString().slice(0, 10));
+                                }
+                                setStrRevisionReason('');
+                                setShowStructureModal(true);
+                              }}
+                              className="px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 text-blue-600 dark:text-blue-400 hover:bg-blue-50 text-[11px] font-bold"
+                            >
+                              Edit Structure
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
                 </tbody>
               </table>
+            </div>
+
+            {/* Pagination Footer */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 text-xs">
+              <div className="text-slate-600 dark:text-slate-400">
+                {salaryStructurePagination.totalEmployees === 0 ? (
+                  <span>Showing <b>0</b> of <b>0</b> employees</span>
+                ) : (
+                  <span>
+                    Showing <b>{salaryStructurePagination.startRecord}–{salaryStructurePagination.endRecord}</b> of{' '}
+                    <b>{salaryStructurePagination.totalEmployees}</b> employees
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  disabled={salaryStructurePagination.safePage <= 1}
+                  onClick={() => setSalaryStructurePage((p) => Math.max(1, p - 1))}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  <span>Previous</span>
+                </button>
+
+                {salaryStructurePagination.pageNumbers.map((pageItem, idx) =>
+                  pageItem === '...' ? (
+                    <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-400 select-none">
+                      ...
+                    </span>
+                  ) : (
+                    <button
+                      key={`page-${pageItem}`}
+                      type="button"
+                      onClick={() => setSalaryStructurePage(Number(pageItem))}
+                      className={`min-w-[30px] px-2.5 py-1.5 rounded-lg border font-bold transition-colors ${
+                        salaryStructurePagination.safePage === pageItem
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      {pageItem}
+                    </button>
+                  )
+                )}
+
+                <button
+                  type="button"
+                  disabled={salaryStructurePagination.safePage >= salaryStructurePagination.totalPages}
+                  onClick={() =>
+                    setSalaryStructurePage((p) => Math.min(salaryStructurePagination.totalPages, p + 1))
+                  }
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <span>Next</span>
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
