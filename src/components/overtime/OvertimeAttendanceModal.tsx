@@ -22,7 +22,9 @@ export const OvertimeAttendanceModal: React.FC<OvertimeAttendanceModalProps> = (
   isOpen,
   onClose,
 }) => {
-  const { fieldForceReps, overtimeRequests, recordOvertimeAttendance, currentUser } = useERP();
+  const { fieldForceReps, overtimeRequests, recordOvertimeAttendance, currentUser, hasPageAction } = useERP();
+  const canRecordAttendance = hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin';
+  const canVerifyAttendance = hasPageAction ? hasPageAction('overtime-management', 'verify_attendance') : currentUser.role === 'Super Admin';
 
   const [selectedEmpId, setSelectedEmpId] = useState('');
   const [selectedRequestId, setSelectedRequestId] = useState('');
@@ -64,11 +66,13 @@ export const OvertimeAttendanceModal: React.FC<OvertimeAttendanceModalProps> = (
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRep) return;
+    if (!selectedRep || !canRecordAttendance) return;
 
     const finalNotes = isOvernight && overnightNextDayDate
       ? `${notes ? `${notes} • ` : ''}Overnight end date: ${overnightNextDayDate}`
       : notes;
+
+    const shouldAutoVerify = canVerifyAttendance && currentUser.role === 'Super Admin';
 
     recordOvertimeAttendance({
       requestId: linkedRequest?.id,
@@ -87,9 +91,9 @@ export const OvertimeAttendanceModal: React.FC<OvertimeAttendanceModalProps> = (
       breakDurationMinutes: breakMinutes,
       rawCalculatedHours: netHours,
       actualOvertimeHours: netHours,
-      isVerified: currentUser.role === 'Super Admin',
-      verifiedBy: currentUser.role === 'Super Admin' ? currentUser.name : undefined,
-      verificationDate: currentUser.role === 'Super Admin' ? new Date().toISOString().split('T')[0] : undefined,
+      isVerified: shouldAutoVerify,
+      verifiedBy: shouldAutoVerify ? currentUser.name : undefined,
+      verificationDate: shouldAutoVerify ? new Date().toISOString().split('T')[0] : undefined,
       syncSource: 'Manual',
       notes: finalNotes,
     });
@@ -304,7 +308,7 @@ export const OvertimeAttendanceModal: React.FC<OvertimeAttendanceModalProps> = (
             </button>
             <button
               type="submit"
-              disabled={!selectedRep}
+              disabled={!selectedRep || !canRecordAttendance}
               className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors disabled:opacity-50"
             >
               Record Attendance

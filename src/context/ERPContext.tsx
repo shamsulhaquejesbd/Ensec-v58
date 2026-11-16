@@ -20170,6 +20170,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     policyUpdates: Partial<EmployeeOvertimePolicy>,
     amendmentNotes?: string
   ) => {
+    if (!hasPageAction(currentUser, 'overtime-management', 'configure_policy')) {
+      console.warn('Permission denied: configure_policy required to amend employee overtime policy.');
+      return;
+    }
     const emp = fieldForceReps.find((r) => r.id === employeeId || r.code === employeeId);
     if (!emp) return;
 
@@ -20227,6 +20231,36 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const createOvertimeRequest = (req: Partial<OvertimeRequest>): OvertimeRequest => {
+    if (!hasPageAction(currentUser, 'overtime-management', 'create_request')) {
+      console.warn('Permission denied: create_request required to create overtime request.');
+      return {
+        id: '',
+        requestNumber: '',
+        employeeId: req.employeeId || '',
+        employeeCode: req.employeeCode || '',
+        employeeName: req.employeeName || '',
+        department: req.department || '',
+        designation: req.designation || '',
+        overtimeDate: req.overtimeDate || '',
+        purposeCategory: req.purposeCategory || 'Direct Production',
+        projectPurpose: req.projectPurpose || '',
+        expectedStartTime: req.expectedStartTime || '',
+        expectedEndTime: req.expectedEndTime || '',
+        expectedHours: 0,
+        overtimeReason: req.overtimeReason || '',
+        requestedBy: currentUser.name,
+        requestedAt: new Date().toISOString(),
+        status: 'Pending Supervisor',
+        hourlyRateBDT: 0,
+        overtimeMultiplier: 0,
+        calculatedOvertimeAmountBDT: 0,
+        batchAllocations: [],
+        isPayrollProcessed: false,
+        isCostingAllocated: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
     const existingMax = overtimeRequests.reduce((max, r) => {
       const m = String(r.requestNumber || '').match(/(\d+)$/);
       const num = m ? parseInt(m[1], 10) : 0;
@@ -20368,8 +20402,16 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateOvertimeRequest = (id: string, updates: Partial<OvertimeRequest>) => {
+    if (!hasPageAction(currentUser, 'overtime-management', 'edit_request')) {
+      console.warn('Permission denied: edit_request required to modify overtime requests.');
+      return;
+    }
     const target = overtimeRequests.find((r) => r.id === id);
     if (!target) return;
+    if (target.isPayrollProcessed || target.status === 'Final Approved' || target.status === 'Rejected') {
+      console.warn('Cannot edit finalized, rejected, or payroll-processed overtime requests.');
+      return;
+    }
     const nowIso = new Date().toISOString();
     setOvertimeRequests((prev) =>
       prev.map((r) => (r.id === id ? { ...r, ...updates, updatedAt: nowIso } : r))
@@ -20378,15 +20420,57 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (sb) {
       const dbPatch: any = { updated_at: nowIso };
       if (updates.status !== undefined) dbPatch.status = updates.status;
+      if (updates.employeeId !== undefined) dbPatch.employee_id = updates.employeeId;
+      if (updates.employeeCode !== undefined) dbPatch.employee_code = updates.employeeCode;
+      if (updates.employeeName !== undefined) dbPatch.employee_name = updates.employeeName;
+      if (updates.department !== undefined) dbPatch.department = updates.department;
+      if (updates.designation !== undefined) dbPatch.designation = updates.designation;
+      if (updates.overtimeDate !== undefined) dbPatch.overtime_date = updates.overtimeDate;
+      if (updates.purposeCategory !== undefined) dbPatch.purpose_category = updates.purposeCategory;
+      if (updates.productionOrderId !== undefined) dbPatch.production_order_id = updates.productionOrderId || null;
+      if (updates.productionOrderNumber !== undefined) dbPatch.production_order_number = updates.productionOrderNumber || null;
+      if (updates.productionBatchNumber !== undefined) dbPatch.production_batch_number = updates.productionBatchNumber || null;
+      if (updates.productName !== undefined) dbPatch.product_name = updates.productName || null;
+      if (updates.expectedStartTime !== undefined) dbPatch.expected_start_time = updates.expectedStartTime;
+      if (updates.expectedEndTime !== undefined) dbPatch.expected_end_time = updates.expectedEndTime;
+      if (updates.expectedHours !== undefined) dbPatch.expected_hours = updates.expectedHours;
       if (updates.actualOvertimeHours !== undefined) dbPatch.actual_overtime_hours = updates.actualOvertimeHours;
+      if (updates.basicSalaryBDT !== undefined) dbPatch.basic_salary_bdt = updates.basicSalaryBDT;
+      if (updates.hourlyRateBDT !== undefined) dbPatch.hourly_rate_bdt = updates.hourlyRateBDT;
+      if (updates.overtimeMultiplier !== undefined) dbPatch.overtime_multiplier = updates.overtimeMultiplier;
       if (updates.calculatedOvertimeAmountBDT !== undefined) dbPatch.calculated_overtime_amount_bdt = updates.calculatedOvertimeAmountBDT;
       if (updates.overtimeReason !== undefined) dbPatch.overtime_reason = updates.overtimeReason;
       if (updates.projectPurpose !== undefined) dbPatch.project_purpose = updates.projectPurpose;
       if (updates.isPayrollProcessed !== undefined) dbPatch.is_payroll_processed = updates.isPayrollProcessed;
       if (updates.payrollRunId !== undefined) dbPatch.payroll_run_id = updates.payrollRunId;
       if (updates.payrollMonth !== undefined) dbPatch.payroll_month = updates.payrollMonth;
-      sb.from('overtime_requests').update(dbPatch).eq('id', id).then(({ error }) => {
-        if (error) console.warn('Supabase overtime_requests update failed:', error.message);
+      sb.from('overtime_requests').update(dbPatch).eq('id', id).then(async ({ error }) => {
+        if (error) {
+          console.warn('Supabase overtime_requests update failed:', error.message);
+          return;
+        }
+        if (Array.isArray(updates.batchAllocations)) {
+          await sb.from('overtime_batch_allocations').delete().eq('request_id', id);
+          if (updates.batchAllocations.length > 0) {
+            await sb.from('overtime_batch_allocations').insert(
+              updates.batchAllocations.map((a) => ({
+                id: a.id,
+                request_id: id,
+                production_order_id: a.productionOrderId || null,
+                production_order_number: a.productionOrderNumber,
+                production_batch_number: a.productionBatchNumber,
+                product_id: a.productId || null,
+                product_name: a.productName,
+                process_type: a.processType,
+                allocated_hours: Number(a.allocatedHours) || 0,
+                hourly_rate_bdt: Number(a.hourlyRateBDT) || 0,
+                allocated_cost_bdt: Number(a.allocatedCostBDT) || 0,
+                is_overhead: Boolean(a.isOverhead),
+                notes: a.notes || null,
+              }))
+            );
+          }
+        }
       });
     }
     addOvertimeAuditLog({
@@ -20402,6 +20486,13 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const deleteOvertimeRequest = (id: string) => {
     const target = overtimeRequests.find((r) => r.id === id);
     if (!target) return;
+    const canEdit = hasPageAction(currentUser, 'overtime-management', 'edit_request');
+    const canFinal = hasPageAction(currentUser, 'overtime-management', 'approve_final');
+    const isFinalOrRejected = target.status === 'Final Approved' || target.status === 'Rejected';
+    if (isFinalOrRejected ? !canFinal : !canEdit && !canFinal) {
+      console.warn('Permission denied: insufficient clearance to delete this overtime request.');
+      return;
+    }
     if (target.isPayrollProcessed) {
       console.warn('Cannot delete overtime request that has already been processed in payroll.');
       return;
@@ -20430,6 +20521,18 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     remarks?: string,
     skipIntermediateSteps?: boolean
   ) => {
+    const requiredAction =
+      step === 'SUPERVISOR'
+        ? 'approve_supervisor'
+        : step === 'PRODUCTION'
+        ? 'approve_production'
+        : step === 'HR'
+        ? 'verify_hr_accounts'
+        : 'approve_final';
+    if (!hasPageAction(currentUser, 'overtime-management', requiredAction)) {
+      console.warn(`Permission denied: ${requiredAction} required to execute step ${step}.`);
+      return;
+    }
     const target = overtimeRequests.find((r) => r.id === id);
     if (!target) return;
     const prevStatus = target.status;
@@ -20537,6 +20640,21 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const rejectOvertimeRequest = (id: string, reason: string) => {
     const target = overtimeRequests.find((r) => r.id === id);
     if (!target) return;
+    const stepAction =
+      target.status === 'Pending Supervisor'
+        ? 'approve_supervisor'
+        : target.status === 'Supervisor Approved'
+        ? 'approve_production'
+        : target.status === 'Production Approved'
+        ? 'verify_hr_accounts'
+        : 'approve_final';
+    const hasRejectClearance =
+      hasPageAction(currentUser, 'overtime-management', stepAction) ||
+      hasPageAction(currentUser, 'overtime-management', 'approve_final');
+    if (!hasRejectClearance) {
+      console.warn('Permission denied: approval clearance required to reject overtime request.');
+      return;
+    }
     const prevStatus = target.status;
     const now = new Date().toISOString();
 
@@ -20585,6 +20703,30 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const recordOvertimeAttendance = (att: Partial<OvertimeAttendance>): OvertimeAttendance => {
+    if (!hasPageAction(currentUser, 'overtime-management', 'record_attendance')) {
+      console.warn('Permission denied: record_attendance required to log overtime attendance.');
+      return {
+        id: '',
+        employeeId: att.employeeId || '',
+        employeeCode: att.employeeCode || '',
+        employeeName: att.employeeName || '',
+        department: att.department || '',
+        designation: att.designation || '',
+        date: att.date || '',
+        normalCheckInTime: att.normalCheckInTime || '',
+        normalCheckOutTime: att.normalCheckOutTime || '',
+        overtimeCheckInTime: att.overtimeCheckInTime || '',
+        overtimeCheckOutTime: att.overtimeCheckOutTime || '',
+        isOvernight: false,
+        breakDurationMinutes: 0,
+        rawCalculatedHours: 0,
+        actualOvertimeHours: 0,
+        isVerified: false,
+        syncSource: 'Manual',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+    }
     const id = att.id || `ot-att-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
     const emp = fieldForceReps.find((r) => r.id === att.employeeId);
 
@@ -20621,9 +20763,9 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       breakDurationMinutes: breakMin,
       rawCalculatedHours: hours,
       actualOvertimeHours: hours,
-      verifiedBy: att.verifiedBy,
-      verificationDate: att.verificationDate,
-      isVerified: Boolean(att.isVerified),
+      verifiedBy: hasPageAction(currentUser, 'overtime-management', 'verify_attendance') ? att.verifiedBy : undefined,
+      verificationDate: hasPageAction(currentUser, 'overtime-management', 'verify_attendance') ? att.verificationDate : undefined,
+      isVerified: Boolean(att.isVerified && hasPageAction(currentUser, 'overtime-management', 'verify_attendance')),
       verificationRemarks: att.verificationRemarks,
       isLateCheckOutAlert: lateOutAlert,
       isMissingCheckOutAlert: missingOut,
@@ -20726,6 +20868,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const verifyOvertimeAttendance = (id: string, verifiedActualHours?: number, remarks?: string) => {
+    if (!hasPageAction(currentUser, 'overtime-management', 'verify_attendance')) {
+      console.warn('Permission denied: verify_attendance required to verify OT attendance.');
+      return;
+    }
     const targetAtt = overtimeAttendances.find((a) => a.id === id);
     if (!targetAtt) return;
     const now = new Date().toISOString();
@@ -20811,6 +20957,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const saveOvertimeBatchAllocations = (requestId: string, allocations: OvertimeBatchAllocation[]) => {
+    if (!hasPageAction(currentUser, 'overtime-management', 'allocate_batch')) {
+      console.warn('Permission denied: allocate_batch required to save batch allocations.');
+      return;
+    }
     const target = overtimeRequests.find((r) => r.id === requestId);
     if (!target) return;
     const maxHours = target.actualOvertimeHours || target.expectedHours || 0;
@@ -20881,6 +21031,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const updateOvertimePolicy = (policy: OvertimePolicyConfig) => {
+    if (!hasPageAction(currentUser, 'overtime-management', 'configure_policy')) {
+      console.warn('Permission denied: configure_policy required to update overtime policy.');
+      return;
+    }
     const nowIso = new Date().toISOString();
     const updatedPolicy = { ...policy, updatedAt: nowIso, updatedBy: currentUser.name };
     setOvertimePolicies((prev) =>
@@ -20926,6 +21080,10 @@ export const ERPProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const clearOvertimeData = () => {
+    if (currentUser.role !== 'Super Admin') {
+      console.warn('Permission denied: only Super Admin can clear overtime data.');
+      return;
+    }
     const reqIds = overtimeRequests.map((r) => r.id);
     const attIds = overtimeAttendances.map((a) => a.id);
     const audIds = overtimeAuditLogs.map((l) => l.id);

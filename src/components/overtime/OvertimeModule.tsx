@@ -24,7 +24,7 @@ import {
   Settings2, 
   FileSpreadsheet,
   Plus,
-  Trash2,
+  ShieldAlert,
 } from 'lucide-react';
 
 interface OvertimeModuleProps {
@@ -32,16 +32,38 @@ interface OvertimeModuleProps {
 }
 
 export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 'dashboard' }) => {
-  const { overtimeRequests, overtimeAttendances, clearOvertimeData } = useERP();
+  const { overtimeRequests, overtimeAttendances, hasPageAction, currentUser } = useERP();
+
+  const canView = hasPageAction ? hasPageAction('overtime-management', 'view') : currentUser.role === 'Super Admin';
+  const canCreateRequest = hasPageAction ? hasPageAction('overtime-management', 'create_request') : currentUser.role === 'Super Admin';
+  const canEditRequest = hasPageAction ? hasPageAction('overtime-management', 'edit_request') : currentUser.role === 'Super Admin';
+  const canRecordAttendance = hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin';
+  const canAllocateBatch = hasPageAction ? hasPageAction('overtime-management', 'allocate_batch') : currentUser.role === 'Super Admin';
 
   const [currentTab, setCurrentTab] = useState<string>(initialSubTab);
-  const [confirmClearOt, setConfirmClearOt] = useState(false);
 
   // Modal states
   const [isNewRequestModalOpen, setIsNewRequestModalOpen] = useState(false);
+  const [editingRequest, setEditingRequest] = useState<OvertimeRequest | null>(null);
   const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
   const [approvalModalRequest, setApprovalModalRequest] = useState<OvertimeRequest | null>(null);
   const [batchSplitModalRequest, setBatchSplitModalRequest] = useState<OvertimeRequest | null>(null);
+
+  if (!canView) {
+    return (
+      <div className="p-8 max-w-md mx-auto mt-10 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-xl text-center space-y-3">
+        <div className="w-12 h-12 mx-auto rounded-xl bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300 flex items-center justify-center">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h2 className="text-base font-bold text-slate-900 dark:text-white">
+          Overtime Hub Access Restricted
+        </h2>
+        <p className="text-xs text-slate-500 leading-relaxed">
+          Your account does not have <strong>View Overtime Hub</strong> clearance. Contact your Super Admin to enable permissions under Users &amp; Permissions.
+        </p>
+      </div>
+    );
+  }
 
   // Pending counts for badges
   const pendingRequestsCount = overtimeRequests.filter(r => r.status !== 'Final Approved' && r.status !== 'Rejected').length;
@@ -70,21 +92,27 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
         </div>
 
         <div className="flex items-center gap-2.5">
-          
-          <button
-            onClick={() => setIsAttendanceModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 transition-colors"
-          >
-            <Clock className="w-3.5 h-3.5 text-slate-600" />
-            Quick Punch / Log
-          </button>
-          <button
-            onClick={() => setIsNewRequestModalOpen(true)}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            New Overtime Request
-          </button>
+          {canRecordAttendance && (
+            <button
+              onClick={() => setIsAttendanceModalOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 transition-colors"
+            >
+              <Clock className="w-3.5 h-3.5 text-slate-600" />
+              Quick Punch / Log
+            </button>
+          )}
+          {canCreateRequest && (
+            <button
+              onClick={() => {
+                setEditingRequest(null);
+                setIsNewRequestModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg shadow-sm transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Overtime Request
+            </button>
+          )}
         </div>
       </div>
 
@@ -121,8 +149,15 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
       <div>
         {currentTab === 'dashboard' && (
           <OvertimeDashboardTab
-            onOpenNewRequest={() => setIsNewRequestModalOpen(true)}
-            onOpenAttendanceModal={() => setIsAttendanceModalOpen(true)}
+            onOpenNewRequest={() => {
+              if (!canCreateRequest) return;
+              setEditingRequest(null);
+              setIsNewRequestModalOpen(true);
+            }}
+            onOpenAttendanceModal={() => {
+              if (!canRecordAttendance) return;
+              setIsAttendanceModalOpen(true);
+            }}
             onNavigateTab={(tab) => {
               if (tab === 'requests') setCurrentTab('requests');
               else if (tab === 'attendance') setCurrentTab('attendance');
@@ -136,21 +171,38 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
 
         {currentTab === 'requests' && (
           <OvertimeRequestsTab
-            onOpenNewRequest={() => setIsNewRequestModalOpen(true)}
+            onOpenNewRequest={() => {
+              if (!canCreateRequest) return;
+              setEditingRequest(null);
+              setIsNewRequestModalOpen(true);
+            }}
+            onOpenEditRequest={(req) => {
+              if (!canEditRequest) return;
+              setEditingRequest(req);
+            }}
             onOpenApprovalModal={(req) => setApprovalModalRequest(req)}
-            onOpenBatchSplitModal={(req) => setBatchSplitModalRequest(req)}
+            onOpenBatchSplitModal={(req) => {
+              if (!canAllocateBatch) return;
+              setBatchSplitModalRequest(req);
+            }}
           />
         )}
 
         {currentTab === 'attendance' && (
           <OvertimeAttendanceTab
-            onRecordNewAttendance={() => setIsAttendanceModalOpen(true)}
+            onRecordNewAttendance={() => {
+              if (!canRecordAttendance) return;
+              setIsAttendanceModalOpen(true);
+            }}
           />
         )}
 
         {currentTab === 'batch_allocation' && (
           <OvertimeBatchAllocationTab
-            onOpenSplitModal={(req) => setBatchSplitModalRequest(req)}
+            onOpenSplitModal={(req) => {
+              if (!canAllocateBatch) return;
+              setBatchSplitModalRequest(req);
+            }}
           />
         )}
 
@@ -168,16 +220,22 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
       </div>
 
       {/* Modals */}
-      {isNewRequestModalOpen && (
+      {((isNewRequestModalOpen && canCreateRequest) || (editingRequest && canEditRequest)) && (
         <NewOvertimeRequestModal
-          onClose={() => setIsNewRequestModalOpen(false)}
+          editingRequest={editingRequest}
+          onClose={() => {
+            setIsNewRequestModalOpen(false);
+            setEditingRequest(null);
+          }}
         />
       )}
 
-      <OvertimeAttendanceModal
-        isOpen={isAttendanceModalOpen}
-        onClose={() => setIsAttendanceModalOpen(false)}
-      />
+      {canRecordAttendance && (
+        <OvertimeAttendanceModal
+          isOpen={isAttendanceModalOpen}
+          onClose={() => setIsAttendanceModalOpen(false)}
+        />
+      )}
 
       {approvalModalRequest && (
         <OvertimeApprovalModal
@@ -186,7 +244,7 @@ export const OvertimeModule: React.FC<OvertimeModuleProps> = ({ initialSubTab = 
         />
       )}
 
-      {batchSplitModalRequest && (
+      {batchSplitModalRequest && canAllocateBatch && (
         <OvertimeBatchSplitModal
           onClose={() => setBatchSplitModalRequest(null)}
           request={batchSplitModalRequest}

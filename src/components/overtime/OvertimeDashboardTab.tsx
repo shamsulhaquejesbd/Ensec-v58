@@ -42,7 +42,13 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
     overtimeAttendances,
     fieldForceReps,
     formatCurrency,
+    hasPageAction,
+    currentUser,
   } = useERP();
+
+  const canCreateRequest = hasPageAction ? hasPageAction('overtime-management', 'create_request') : currentUser.role === 'Super Admin';
+  const canRecordAttendance = hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin';
+  const canViewCost = hasPageAction ? hasPageAction('overtime-management', 'view_cost') : currentUser.role === 'Super Admin';
 
   // 1. KPI Calculations
   const kpis = useMemo(() => {
@@ -157,8 +163,10 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
 
   // Max values for chart bar heights
   const maxMonthlyCost = Math.max(...kpis.monthlyTrend.map((m) => m.cost), 1);
+  const maxMonthlyHours = Math.max(...kpis.monthlyTrend.map((m) => m.hours), 1);
   const maxDeptHours = Math.max(...kpis.departmentWise.map((d) => d.hours), 1);
   const maxBatchCost = Math.max(...kpis.batchWise.map((b) => b.cost), 1);
+  const maxBatchHours = Math.max(...kpis.batchWise.map((b) => b.hours), 1);
 
   return (
     <div className="space-y-6">
@@ -179,20 +187,24 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
-          <button
-            onClick={onOpenNewRequest}
-            className="py-2 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
-          >
-            <PlusCircle className="w-4 h-4 text-white" />
-            <span>New OT Request</span>
-          </button>
-          <button
-            onClick={onOpenAttendanceModal}
-            className="py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
-          >
-            <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span>Record OT Attendance</span>
-          </button>
+          {canCreateRequest && (
+            <button
+              onClick={onOpenNewRequest}
+              className="py-2 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+            >
+              <PlusCircle className="w-4 h-4 text-white" />
+              <span>New OT Request</span>
+            </button>
+          )}
+          {canRecordAttendance && (
+            <button
+              onClick={onOpenAttendanceModal}
+              className="py-2 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <Clock className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span>Record OT Attendance</span>
+            </button>
+          )}
           <button
             onClick={() => onNavigateTab('reports')}
             className="py-2 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold border border-slate-200 dark:border-slate-700 text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
@@ -228,9 +240,11 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
             </div>
           </div>
           <div className="text-xl font-black text-emerald-600 dark:text-emerald-400 font-mono">
-            {formatCurrency(kpis.totalCost)}
+            {canViewCost ? formatCurrency(kpis.totalCost) : 'Restricted'}
           </div>
-          <p className="text-[10px] text-slate-400">Labor Act 2.0x multiplier</p>
+          <p className="text-[10px] text-slate-400">
+            {canViewCost ? 'Labor Act 2.0x multiplier' : 'Financial clearance required'}
+          </p>
         </div>
 
         {/* KPI 3: Employees Working Overtime */}
@@ -278,13 +292,17 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
         {/* KPI 6: Top Department Cost */}
         <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs space-y-1">
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-bold text-slate-500 uppercase">6. Top Dept Cost</span>
+            <span className="text-[10px] font-bold text-slate-500 uppercase">
+              {canViewCost ? '6. Top Dept Cost' : '6. Top Dept Hours'}
+            </span>
             <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950 text-indigo-600">
               <Building className="w-3.5 h-3.5" />
             </div>
           </div>
           <div className="text-base font-black text-indigo-600 dark:text-indigo-400 font-mono truncate">
-            {formatCurrency(kpis.departmentWise[0]?.cost || 0)}
+            {canViewCost
+              ? formatCurrency(kpis.departmentWise[0]?.cost || 0)
+              : `${kpis.departmentWise[0]?.hours || 0} hrs`}
           </div>
           <p className="text-[10px] text-slate-400 truncate">
             {kpis.departmentWise[0]?.name || 'Manufacturing'}
@@ -300,12 +318,14 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
             <div>
               <h3 className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
                 <BarChart3 className="w-4 h-4 text-blue-600" />
-                <span>Monthly Overtime Cost Trend</span>
+                <span>{canViewCost ? 'Monthly Overtime Cost Trend' : 'Monthly Overtime Hours Trend'}</span>
               </h3>
-              <p className="text-[10px] text-slate-500">Historical &amp; active month financial expenditure</p>
+              <p className="text-[10px] text-slate-500">
+                {canViewCost ? 'Historical & active month financial expenditure' : 'Historical & active month overtime hours'}
+              </p>
             </div>
             <span className="text-[10px] font-mono font-bold text-blue-600 bg-blue-50 dark:bg-blue-950 px-2 py-0.5 rounded">
-              BDT Expense
+              {canViewCost ? 'BDT Expense' : 'Hours Logged'}
             </span>
           </div>
 
@@ -317,11 +337,13 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
               </div>
             ) : (
               kpis.monthlyTrend.map((item) => {
-                const heightPct = Math.round((item.cost / maxMonthlyCost) * 100);
+                const heightPct = canViewCost
+                  ? Math.round((item.cost / maxMonthlyCost) * 100)
+                  : Math.round((item.hours / maxMonthlyHours) * 100);
                 return (
                   <div key={item.month} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
                     <span className="text-[10px] font-mono font-bold text-slate-600 dark:text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">
-                      ৳{Math.round(item.cost / 1000)}k
+                      {canViewCost ? `৳${Math.round(item.cost / 1000)}k` : `${item.hours}h`}
                     </span>
                     <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-t-lg overflow-hidden flex items-end h-32">
                       <div
@@ -369,7 +391,7 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
                         {dept.name}
                       </span>
                       <span className="font-mono font-bold text-slate-900 dark:text-white">
-                        {dept.hours} hrs • {formatCurrency(dept.cost)}
+                        {dept.hours} hrs{canViewCost ? ` • ${formatCurrency(dept.cost)}` : ''}
                       </span>
                     </div>
                     <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
@@ -391,12 +413,14 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
             <div>
               <h3 className="font-bold text-xs text-slate-900 dark:text-white flex items-center gap-1.5">
                 <Cpu className="w-4 h-4 text-indigo-600" />
-                <span>Batch-wise Overtime Cost</span>
+                <span>{canViewCost ? 'Batch-wise Overtime Cost' : 'Batch-wise Overtime Hours'}</span>
               </h3>
-              <p className="text-[10px] text-slate-500">Capitalized direct overtime absorbed into battery packs</p>
+              <p className="text-[10px] text-slate-500">
+                {canViewCost ? 'Capitalized direct overtime absorbed into battery packs' : 'Direct overtime hours allocated to battery packs'}
+              </p>
             </div>
             <span className="text-[10px] font-mono font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded">
-              Cost Absorption
+              {canViewCost ? 'Cost Absorption' : 'Hours Allocation'}
             </span>
           </div>
 
@@ -407,7 +431,9 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
               </div>
             ) : (
               kpis.batchWise.slice(0, 4).map((b) => {
-                const widthPct = Math.round((b.cost / maxBatchCost) * 100);
+                const widthPct = canViewCost
+                  ? Math.round((b.cost / maxBatchCost) * 100)
+                  : Math.round((b.hours / maxBatchHours) * 100);
                 return (
                   <div key={b.batchNumber} className="space-y-1">
                     <div className="flex items-center justify-between text-[11px]">
@@ -415,7 +441,7 @@ export const OvertimeDashboardTab: React.FC<OvertimeDashboardTabProps> = ({
                         {b.batchNumber}
                       </span>
                       <span className="font-mono font-bold text-slate-900 dark:text-white">
-                        {formatCurrency(b.cost)} ({b.hours}h)
+                        {canViewCost ? `${formatCurrency(b.cost)} (${b.hours}h)` : `${b.hours} hrs`}
                       </span>
                     </div>
                     <div className="h-2 w-full bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">

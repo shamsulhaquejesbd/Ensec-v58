@@ -177,7 +177,16 @@ export const OvertimeReportsTab: React.FC = () => {
     payrollSettings,
     getEmployeeEffectiveOvertimePolicy,
     orgHierarchy,
+    hasPageAction,
+    currentUser,
   } = useERP();
+
+  const canExport = hasPageAction
+    ? hasPageAction('overtime-management', 'export')
+    : currentUser.role === 'Super Admin';
+  const canViewCost = hasPageAction
+    ? hasPageAction('overtime-management', 'view_cost')
+    : currentUser.role === 'Super Admin';
 
   const [activeReport, setActiveReport] = useState<number>(1);
   const [departmentFilter, setDepartmentFilter] = useState('all');
@@ -245,14 +254,99 @@ export const OvertimeReportsTab: React.FC = () => {
     { id: 7, name: 'Overtime Hours vs Production Output Report', icon: TrendingUp, desc: 'Efficiency ratio of overtime input hours to finished goods units produced' },
   ];
 
-  const availableDepartments = Array.from(
-    new Set([
-      ...(departments || []).map((d) => d.name).filter(Boolean),
-      ...fieldForceReps.map((r) => r.department).filter(Boolean) as string[],
-      ...fieldForceReps.flatMap((r) => r.departments || []).filter(Boolean),
-      ...overtimeRequests.map((r) => r.department).filter(Boolean),
-    ])
+  const stripDepartmentCode = (raw: string): string => {
+    let result = String(raw || '').trim();
+    if (!result) return '';
+    const matchedDept = (departments || []).find((d) => {
+      const code = String(d.code || '').trim();
+      return Boolean(code) && result.toUpperCase().startsWith(code.toUpperCase());
+    });
+    if (matchedDept?.code) {
+      const escapedCode = matchedDept.code.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const withoutCode = result
+        .replace(new RegExp(`^${escapedCode}\\s*[-–—:]?\\s*`, 'i'), '')
+        .trim();
+      if (withoutCode) {
+        result = withoutCode;
+      }
+    }
+    const stripped = result.replace(/^[A-Z]{1,6}-\d+\s*[-–—:]\s*/i, '').trim();
+    return stripped || result;
+  };
+
+  const activeMasterDepartments = useMemo(
+    () => (departments || []).filter((d) => !d.status || normStr(d.status) === 'active'),
+    [departments]
   );
+
+  const availableDepartments = useMemo(() => {
+    if ((departments || []).length > 0) {
+      return Array.from(
+        new Set(
+          activeMasterDepartments
+            .map((d) => String(d.name || stripDepartmentCode(d.fullName || '')).trim())
+            .filter(Boolean)
+        )
+      );
+    }
+    return Array.from(
+      new Set(
+        fieldForceReps
+          .filter(isEmployeeActive)
+          .flatMap((r) => [r.department, ...(r.departments || [])])
+          .map((d) => stripDepartmentCode(String(d || '')))
+          .filter(Boolean)
+      )
+    );
+  }, [departments, activeMasterDepartments, fieldForceReps]);
+
+  useEffect(() => {
+    if (
+      departmentFilter !== 'all' &&
+      !availableDepartments.some((d) => normStr(d) === normStr(departmentFilter))
+    ) {
+      setDepartmentFilter('all');
+    }
+  }, [departmentFilter, availableDepartments]);
+
+  const matchesDepartmentFilter = (candidateDept?: string, selectedDept?: string): boolean => {
+    const selected = String(selectedDept || '').trim();
+    if (!selected || normStr(selected) === 'all') return true;
+    const candidate = String(candidateDept || '').trim();
+    if (!candidate) return false;
+    if (normStr(candidate) === normStr(selected)) return true;
+
+    const candidateStripped = normStr(stripDepartmentCode(candidate));
+    const selectedStripped = normStr(stripDepartmentCode(selected));
+    if (candidateStripped && selectedStripped && candidateStripped === selectedStripped) {
+      return true;
+    }
+
+    const matchedActiveDept = activeMasterDepartments.find((d) => {
+      const aliases = [
+        d.name,
+        d.fullName,
+        d.code && d.name ? `${d.code} - ${d.name}` : '',
+      ]
+        .map((v) => normStr(v))
+        .filter(Boolean);
+      return aliases.includes(normStr(selected));
+    });
+    if (matchedActiveDept) {
+      const aliases = [
+        matchedActiveDept.name,
+        matchedActiveDept.fullName,
+        matchedActiveDept.code && matchedActiveDept.name
+          ? `${matchedActiveDept.code} - ${matchedActiveDept.name}`
+          : '',
+      ]
+        .map((v) => normStr(v))
+        .filter(Boolean);
+      if (aliases.includes(normStr(candidate))) return true;
+    }
+
+    return false;
+  };
 
   const STANDARD_EMPLOYMENT_TYPES = [
     'Supervisor',
@@ -346,7 +440,7 @@ export const OvertimeReportsTab: React.FC = () => {
     if (monthFilter && (parsed ? parsed.ym !== monthFilter : !String(r.overtimeDate || '').startsWith(monthFilter))) {
       return false;
     }
-    if (departmentFilter !== 'all' && r.department !== departmentFilter) return false;
+    if (departmentFilter !== 'all' && !matchesDepartmentFilter(r.department, departmentFilter)) return false;
     if (employeeFilter !== 'all') {
       if (selectedEmployeeFilterObj) {
         if (!matchesEmpIdentity(selectedEmployeeFilterObj, r)) return false;
@@ -402,26 +496,6 @@ export const OvertimeReportsTab: React.FC = () => {
       };
     });
   }, [activeYearNum, activeMonthNum, daysInActiveMonth]);
-
-  const stripDepartmentCode = (raw: string): string => {
-    let result = String(raw || '').trim();
-    if (!result) return '';
-    const matchedDept = (departments || []).find((d) => {
-      const code = String(d.code || '').trim();
-      return Boolean(code) && result.toUpperCase().startsWith(code.toUpperCase());
-    });
-    if (matchedDept?.code) {
-      const escapedCode = matchedDept.code.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const withoutCode = result
-        .replace(new RegExp(`^${escapedCode}\\s*[-–—:]?\\s*`, 'i'), '')
-        .trim();
-      if (withoutCode) {
-        result = withoutCode;
-      }
-    }
-    const stripped = result.replace(/^[A-Z]{1,6}-\d+\s*[-–—:]\s*/i, '').trim();
-    return stripped || result;
-  };
 
   const companyDisplayName =
     departmentFilter !== 'all'
@@ -505,8 +579,9 @@ export const OvertimeReportsTab: React.FC = () => {
       if (!isEmployeeActive(rep)) return;
       const deptMatch =
         departmentFilter === 'all' ||
-        rep.department === departmentFilter ||
-        (Array.isArray(rep.departments) && rep.departments.includes(departmentFilter));
+        matchesDepartmentFilter(rep.department, departmentFilter) ||
+        (Array.isArray(rep.departments) &&
+          rep.departments.some((d) => matchesDepartmentFilter(d, departmentFilter)));
       const empMatch = employeeFilter === 'all' || rep.id === employeeFilter;
       const repEmpType = rep.employmentType || (rep as any).employment_type || '-';
       const repGender = rep.gender || '-';
@@ -555,9 +630,9 @@ export const OvertimeReportsTab: React.FC = () => {
       const repDept = matchedRep?.department || matchedRep?.departments?.[0] || rec.department || '-';
       if (
         departmentFilter !== 'all' &&
-        repDept !== departmentFilter &&
-        rec.department !== departmentFilter &&
-        !(matchedRep?.departments || []).includes(departmentFilter)
+        !matchesDepartmentFilter(repDept, departmentFilter) &&
+        !matchesDepartmentFilter(rec.department, departmentFilter) &&
+        !(matchedRep?.departments || []).some((d) => matchesDepartmentFilter(d, departmentFilter))
       ) {
         return;
       }
@@ -772,6 +847,7 @@ export const OvertimeReportsTab: React.FC = () => {
     overtimeRecords,
     attendanceRecords,
     fieldForceReps,
+    departments,
     salaryStructures,
     departmentFilter,
     employmentTypeFilters,
@@ -790,6 +866,7 @@ export const OvertimeReportsTab: React.FC = () => {
 
   // Helper to export any dataset to Excel
   const exportToExcel = (data: any[], fileName: string) => {
+    if (!canExport) return;
     if (activeReport === 2) {
       const sheetRows: any[][] = [];
       sheetRows.push([companyDisplayName]);
@@ -824,13 +901,13 @@ export const OvertimeReportsTab: React.FC = () => {
           row.name,
           row.employmentType,
           row.gender,
-          row.monthlySalary,
+          canViewCost ? row.monthlySalary : 'Restricted',
           row.workDay,
-          row.ratePerDay,
-          row.ratePerHour,
+          canViewCost ? row.ratePerDay : 'Restricted',
+          canViewCost ? row.ratePerHour : 'Restricted',
           ...row.dailyHours.map((h) => (h > 0 ? Number(h.toFixed(2)) : '')),
           Number(row.totalHours.toFixed(2)),
-          row.totalAmount,
+          canViewCost ? row.totalAmount : 'Restricted',
           '',
           row.mobileNo,
         ]);
@@ -848,12 +925,17 @@ export const OvertimeReportsTab: React.FC = () => {
         '',
         ...deptOvertimeSheet.dailyTotals.map((t) => Number(t.toFixed(2))),
         Number(deptOvertimeSheet.grandTotalHours.toFixed(2)),
-        deptOvertimeSheet.grandTotalAmount,
+        canViewCost ? deptOvertimeSheet.grandTotalAmount : 'Restricted',
         '',
         '',
       ]);
       sheetRows.push([]);
-      sheetRows.push(['', `TK. ${deptOvertimeSheet.amountInWords} Only .`]);
+      sheetRows.push([
+        '',
+        canViewCost
+          ? `TK. ${deptOvertimeSheet.amountInWords} Only .`
+          : 'Financial totals restricted (View Overtime Financials permission required)',
+      ]);
       sheetRows.push([]);
       sheetRows.push([]);
       sheetRows.push(['', 'Prepared By', '', '', 'Checked By', ...Array(Math.max(1, totalTableCols - 8)).fill(''), 'Approved BY']);
@@ -878,6 +960,7 @@ export const OvertimeReportsTab: React.FC = () => {
   };
 
   const handlePrintDeptBill = () => {
+    if (!canExport) return;
     document.body.classList.add('printing-ot-bill');
     const cleanup = () => {
       document.body.classList.remove('printing-ot-bill');
@@ -909,15 +992,20 @@ export const OvertimeReportsTab: React.FC = () => {
         grouped[r.employeeId].count += 1;
       });
 
-    return Object.entries(grouped).map(([, val]) => ({
-      'Employee ID': val.code,
-      'Employee Name': val.name,
-      'Department': val.dept,
-      'OT Duty Days': val.count,
-      'Total OT Hours': Number(val.hours.toFixed(2)),
-      'Average Rate (BDT)': Math.round(val.amount / (val.hours || 1)),
-      'Total Overtime Amount (BDT)': Math.round(val.amount),
-    }));
+    return Object.entries(grouped).map(([, val]) => {
+      const baseRow: Record<string, any> = {
+        'Employee ID': val.code,
+        'Employee Name': val.name,
+        'Department': val.dept,
+        'OT Duty Days': val.count,
+        'Total OT Hours': Number(val.hours.toFixed(2)),
+      };
+      if (canViewCost) {
+        baseRow['Average Rate (BDT)'] = Math.round(val.amount / (val.hours || 1));
+        baseRow['Total Overtime Amount (BDT)'] = Math.round(val.amount);
+      }
+      return baseRow;
+    });
   };
 
   // Generate Report 3: Batch-wise
@@ -939,13 +1027,18 @@ export const OvertimeReportsTab: React.FC = () => {
       });
     });
 
-    return Object.entries(batchMap).map(([batch, val]) => ({
-      'Batch Number': batch,
-      'Production Order': val.orderNo,
-      'Allocated OT Hours': Number(val.hours.toFixed(2)),
-      'Direct Overtime Cost (BDT)': Math.round(val.cost),
-      'Allocation Type': batch === 'FACTORY_OVERHEAD' ? 'Factory Indirect Overhead' : 'Direct WIP Labor',
-    }));
+    return Object.entries(batchMap).map(([batch, val]) => {
+      const baseRow: Record<string, any> = {
+        'Batch Number': batch,
+        'Production Order': val.orderNo,
+        'Allocated OT Hours': Number(val.hours.toFixed(2)),
+      };
+      if (canViewCost) {
+        baseRow['Direct Overtime Cost (BDT)'] = Math.round(val.cost);
+      }
+      baseRow['Allocation Type'] = batch === 'FACTORY_OVERHEAD' ? 'Factory Indirect Overhead' : 'Direct WIP Labor';
+      return baseRow;
+    });
   };
 
   // Generate Report 4: Order-wise
@@ -963,49 +1056,62 @@ export const OvertimeReportsTab: React.FC = () => {
         return sum + (alloc?.allocatedHours || 0);
       }, 0);
 
-      return {
+      const baseRow: Record<string, any> = {
         'Order Number': order.orderNumber,
         'Batch Number': order.batchNumber || 'N/A',
         'Product Name': order.productName || 'Battery Unit',
         'Batch Quantity': order.quantity,
         'Overtime Hours Absorbed': Number(totalHours.toFixed(2)),
-        'Overtime Cost Absorbed (BDT)': Math.round(totalCost),
-        'Per Unit OT Cost (BDT)': Number((totalCost / (order.quantity || 1)).toFixed(2)),
       };
+      if (canViewCost) {
+        baseRow['Overtime Cost Absorbed (BDT)'] = Math.round(totalCost);
+        baseRow['Per Unit OT Cost (BDT)'] = Number((totalCost / (order.quantity || 1)).toFixed(2));
+      }
+      return baseRow;
     });
   };
 
   // Generate Report 5: Payroll Sync
   const generatePayrollReport = () => {
-    return filteredRequests.map(r => ({
-      'Request #': r.requestNumber,
-      'Date': r.overtimeDate,
-      'Employee ID': r.employeeCode || r.employeeId,
-      'Employee Name': r.employeeName,
-      'Department': r.department,
-      'Hours': r.actualOvertimeHours || r.expectedHours,
-      'Reason for Overtime Requisition': r.overtimeReason || '-',
-      'Rate (BDT)': r.hourlyRateBDT || 0,
-      'Total OT (BDT)': r.calculatedOvertimeAmountBDT || 0,
-      'Payroll Processed': r.isPayrollProcessed ? 'YES' : 'PENDING',
-      'Payroll Run ID': r.payrollRunId || 'Unposted',
-      'Approval Status': r.status.toUpperCase(),
-    }));
+    return filteredRequests.map(r => {
+      const baseRow: Record<string, any> = {
+        'Request #': r.requestNumber,
+        'Date': r.overtimeDate,
+        'Employee ID': r.employeeCode || r.employeeId,
+        'Employee Name': r.employeeName,
+        'Department': r.department,
+        'Hours': r.actualOvertimeHours || r.expectedHours,
+        'Reason for Overtime Requisition': r.overtimeReason || '-',
+      };
+      if (canViewCost) {
+        baseRow['Rate (BDT)'] = r.hourlyRateBDT || 0;
+        baseRow['Total OT (BDT)'] = r.calculatedOvertimeAmountBDT || 0;
+      }
+      baseRow['Payroll Processed'] = r.isPayrollProcessed ? 'YES' : 'PENDING';
+      baseRow['Payroll Run ID'] = r.payrollRunId || 'Unposted';
+      baseRow['Approval Status'] = r.status.toUpperCase();
+      return baseRow;
+    });
   };
 
   // Generate Report 6: Pending Approvals
   const generatePendingReport = () => {
-    return filteredRequests.filter(r => r.status !== 'Final Approved' && r.status !== 'Rejected').map(r => ({
-      'Request #': r.requestNumber,
-      'Date': r.overtimeDate,
-      'Employee Name': r.employeeName,
-      'Department': r.department,
-      'Current Workflow Step': r.status,
-      'Expected Hours': r.expectedHours,
-      'Actual Hours': r.actualOvertimeHours || r.expectedHours,
-      'Estimated Cost (BDT)': r.calculatedOvertimeAmountBDT || 0,
-      'Requested By': r.requestedBy,
-    }));
+    return filteredRequests.filter(r => r.status !== 'Final Approved' && r.status !== 'Rejected').map(r => {
+      const baseRow: Record<string, any> = {
+        'Request #': r.requestNumber,
+        'Date': r.overtimeDate,
+        'Employee Name': r.employeeName,
+        'Department': r.department,
+        'Current Workflow Step': r.status,
+        'Expected Hours': r.expectedHours,
+        'Actual Hours': r.actualOvertimeHours || r.expectedHours,
+      };
+      if (canViewCost) {
+        baseRow['Estimated Cost (BDT)'] = r.calculatedOvertimeAmountBDT || 0;
+      }
+      baseRow['Requested By'] = r.requestedBy;
+      return baseRow;
+    });
   };
 
   // Generate Report 7: Hours vs Output
@@ -1054,25 +1160,27 @@ export const OvertimeReportsTab: React.FC = () => {
           
         </div>
 
-        <div className="flex items-center gap-2">
-          {activeReport === 2 && (
+        {canExport && (
+          <div className="flex items-center gap-2">
+            {activeReport === 2 && (
+              <button
+                type="button"
+                onClick={handlePrintDeptBill}
+                className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
+              >
+                <Printer className="w-4 h-4" />
+                Print Report
+              </button>
+            )}
             <button
-              type="button"
-              onClick={handlePrintDeptBill}
-              className="flex items-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
+              onClick={() => exportToExcel(currentData, reportsList[activeReport - 1].name.replace(/\s+/g, '_'))}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
             >
-              <Printer className="w-4 h-4" />
-              Print Report
+              <Download className="w-4 h-4" />
+              Export to Excel (.xlsx)
             </button>
-          )}
-          <button
-            onClick={() => exportToExcel(currentData, reportsList[activeReport - 1].name.replace(/\s+/g, '_'))}
-            className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-lg text-xs font-semibold shadow-sm transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export to Excel (.xlsx)
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Reports Grid Selector */}
@@ -1354,16 +1462,16 @@ export const OvertimeReportsTab: React.FC = () => {
                         {row.gender}
                       </td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-sans">
-                        {row.monthlySalary}
+                        {canViewCost ? row.monthlySalary : 'Restricted'}
                       </td>
                       <td className="border border-black px-1 py-0.5 text-center font-sans">
                         {row.workDay}
                       </td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-sans">
-                        {row.ratePerDay}
+                        {canViewCost ? row.ratePerDay : 'Restricted'}
                       </td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-sans">
-                        {row.ratePerHour}
+                        {canViewCost ? row.ratePerHour : 'Restricted'}
                       </td>
                       {row.dailyHours.map((hrs, idx) => (
                         <td
@@ -1377,7 +1485,7 @@ export const OvertimeReportsTab: React.FC = () => {
                         {formatHoursValue(row.totalHours)}
                       </td>
                       <td className="border border-black px-1.5 py-0.5 text-center font-bold font-sans">
-                        {row.totalAmount}
+                        {canViewCost ? row.totalAmount : 'Restricted'}
                       </td>
                       <td className="border border-black px-2 py-0.5"></td>
                       <td className="border border-black px-1.5 py-0.5 text-center whitespace-nowrap font-sans">
@@ -1410,7 +1518,7 @@ export const OvertimeReportsTab: React.FC = () => {
                     {formatHoursValue(deptOvertimeSheet.grandTotalHours)}
                   </td>
                   <td className="border border-black px-1.5 py-1 text-center font-sans">
-                    {deptOvertimeSheet.grandTotalAmount}
+                    {canViewCost ? deptOvertimeSheet.grandTotalAmount : 'Restricted'}
                   </td>
                   <td className="border border-black px-2 py-1"></td>
                   <td className="border border-black px-1.5 py-1"></td>
@@ -1421,7 +1529,9 @@ export const OvertimeReportsTab: React.FC = () => {
 
           {/* Amount in Words */}
           <div className="mt-1.5 pl-16 text-[11px] font-bold text-black">
-            TK. &nbsp;{deptOvertimeSheet.amountInWords} &nbsp;Only .
+            {canViewCost
+              ? <>TK. &nbsp;{deptOvertimeSheet.amountInWords} &nbsp;Only .</>
+              : 'Financial totals restricted (View Overtime Financials permission required)'}
           </div>
 
           {/* Signatory Footer */}

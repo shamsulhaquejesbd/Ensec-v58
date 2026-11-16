@@ -25,10 +25,9 @@ import {
   Search,
 } from 'lucide-react';
 import {
+  OvertimeRequest,
   OvertimePurposeCategory,
   calculateNetOvertimeHours,
-  calculateHourlyRate,
-  calculateOvertimeTotalBDT,
   calculateEmployeeIndividualOvertime,
   EmployeeOvertimePolicy,
 } from '../../types/overtime.ts';
@@ -37,12 +36,14 @@ interface NewOvertimeRequestModalProps {
   onClose: () => void;
   onSuccess?: (requestId: string) => void;
   initialEmployeeId?: string;
+  editingRequest?: OvertimeRequest | null;
 }
 
 export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = ({
   onClose,
   onSuccess,
   initialEmployeeId,
+  editingRequest = null,
 }) => {
   const {
     fieldForceReps,
@@ -50,14 +51,22 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
     salaryStructures,
     getEmployeeEffectiveOvertimePolicy,
     createOvertimeRequest,
+    updateOvertimeRequest,
+    hasPageAction,
     currentUser,
     formatCurrency,
   } = useERP();
 
+  const isEditMode = Boolean(editingRequest);
+  const canCreateRequest = hasPageAction ? hasPageAction('overtime-management', 'create_request') : currentUser.role === 'Super Admin';
+  const canEditRequest = hasPageAction ? hasPageAction('overtime-management', 'edit_request') : currentUser.role === 'Super Admin';
+  const canViewCost = hasPageAction ? hasPageAction('overtime-management', 'view_cost') : currentUser.role === 'Super Admin';
+  const hasSubmitPermission = isEditMode ? canEditRequest : canCreateRequest;
+
   // Selected Employee & Search
   const [employeeSearch, setEmployeeSearch] = useState<string>('');
   const [employeeId, setEmployeeId] = useState<string>(
-    initialEmployeeId || (fieldForceReps[0]?.id || '')
+    editingRequest?.employeeId || initialEmployeeId || (fieldForceReps[0]?.id || '')
   );
 
   const filteredEmployees = useMemo(() => {
@@ -84,7 +93,9 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
   }, [fieldForceReps, employeeId]);
 
   // Selected Production Order & Batch
-  const [productionOrderId, setProductionOrderId] = useState<string>('');
+  const [productionOrderId, setProductionOrderId] = useState<string>(
+    editingRequest?.productionOrderId || ''
+  );
 
   const selectedOrder = useMemo(() => {
     return productionOrders.find((p) => p.id === productionOrderId) || null;
@@ -92,16 +103,50 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
 
   // Form Fields
   const [overtimeDate, setOvertimeDate] = useState<string>(
-    new Date().toISOString().substring(0, 10)
+    editingRequest?.overtimeDate || new Date().toISOString().substring(0, 10)
   );
-  const [purposeCategory, setPurposeCategory] = useState<OvertimePurposeCategory>('Direct Production');
-  const [customBatchNumber, setCustomBatchNumber] = useState<string>('');
-  const [projectPurpose, setProjectPurpose] = useState<string>('');
-  const [expectedStartTime, setExpectedStartTime] = useState<string>('18:30');
-  const [expectedEndTime, setExpectedEndTime] = useState<string>('22:00');
-  const [isOvernight, setIsOvernight] = useState<boolean>(false);
-  const [breakDurationMinutes, setBreakDurationMinutes] = useState<number>(15);
-  const [overtimeReason, setOvertimeReason] = useState<string>('');
+  const [purposeCategory, setPurposeCategory] = useState<OvertimePurposeCategory>(
+    editingRequest?.purposeCategory || 'Direct Production'
+  );
+  const [customBatchNumber, setCustomBatchNumber] = useState<string>(
+    editingRequest?.productionBatchNumber || ''
+  );
+  const [projectPurpose, setProjectPurpose] = useState<string>(
+    editingRequest?.projectPurpose || ''
+  );
+  const [expectedStartTime, setExpectedStartTime] = useState<string>(
+    editingRequest?.expectedStartTime || '18:30'
+  );
+  const [expectedEndTime, setExpectedEndTime] = useState<string>(
+    editingRequest?.expectedEndTime || '22:00'
+  );
+  const [isOvernight, setIsOvernight] = useState<boolean>(() => {
+    if (!editingRequest) return false;
+    return Boolean(
+      editingRequest.expectedEndTime &&
+      editingRequest.expectedStartTime &&
+      editingRequest.expectedEndTime < editingRequest.expectedStartTime
+    );
+  });
+  const [breakDurationMinutes, setBreakDurationMinutes] = useState<number>(() => {
+    if (!editingRequest) return 15;
+    const overnight = Boolean(
+      editingRequest.expectedEndTime &&
+      editingRequest.expectedStartTime &&
+      editingRequest.expectedEndTime < editingRequest.expectedStartTime
+    );
+    const grossHrs = calculateNetOvertimeHours(
+      editingRequest.expectedStartTime || '18:30',
+      editingRequest.expectedEndTime || '22:00',
+      0,
+      overnight
+    );
+    const diffMins = Math.round((grossHrs - (editingRequest.expectedHours || 0)) * 60);
+    return diffMins > 0 && diffMins <= 120 ? diffMins : 0;
+  });
+  const [overtimeReason, setOvertimeReason] = useState<string>(
+    editingRequest?.overtimeReason || ''
+  );
 
   // Retrieve employee's assigned individual overtime policy based on overtime date
   const employeePolicy: EmployeeOvertimePolicy | null = useMemo(() => {
@@ -156,11 +201,74 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedEmployee) return;
+    if (!selectedEmployee || !hasSubmitPermission) return;
 
     const batchNo = customBatchNumber.trim() || selectedOrder?.batchNumber || '';
     const orderNo = selectedOrder?.orderNumber || selectedOrder?.id || productionOrderId || '';
     const prodName = selectedOrder?.productName || '';
+
+    const nextBatchAllocations =
+      purposeCategory === 'Direct Production'
+        ? [
+            {
+              id: `alloc-${Date.now()}`,
+              productionOrderId: selectedOrder?.id || productionOrderId || '',
+              productionOrderNumber: orderNo || 'UNASSIGNED',
+              productionBatchNumber: batchNo || 'UNASSIGNED',
+              productName: prodName || 'General Production',
+              processType: 'Spot Welding & Busbar' as const,
+              allocatedHours: liveCalculations.hours,
+              hourlyRateBDT: liveCalculations.hourlyRate * liveCalculations.multiplier,
+              allocatedCostBDT: liveCalculations.totalAmount,
+              isOverhead: false,
+              notes: 'Initial production batch assignment',
+            },
+          ]
+        : [
+            {
+              id: `alloc-${Date.now()}`,
+              productionOrderId: 'overhead',
+              productionOrderNumber: 'OVERHEAD-PLANT',
+              productionBatchNumber: 'PLANT-MAINTENANCE',
+              productName: 'Factory Facility',
+              processType: 'General Factory Overhead' as const,
+              allocatedHours: liveCalculations.hours,
+              hourlyRateBDT: liveCalculations.hourlyRate * liveCalculations.multiplier,
+              allocatedCostBDT: liveCalculations.totalAmount,
+              isOverhead: true,
+              notes: 'Maintenance overhead - absorbed into factory utility expense',
+            },
+          ];
+
+    if (editingRequest) {
+      updateOvertimeRequest(editingRequest.id, {
+        employeeId: selectedEmployee.id,
+        employeeCode: selectedEmployee.code || 'EMP-000',
+        employeeName: selectedEmployee.name || 'Staff Member',
+        department: selectedEmployee.department || 'Manufacturing & Assembly',
+        designation: selectedEmployee.designation || 'Technician',
+        employeeCategory: selectedEmployee.employeeCategory || 'Factory Employee',
+        overtimeDate,
+        purposeCategory,
+        productionOrderId: selectedOrder?.id || (productionOrderId || undefined),
+        productionOrderNumber: orderNo || undefined,
+        productionBatchNumber: batchNo || undefined,
+        productName: prodName || undefined,
+        projectPurpose: projectPurpose.trim() || (batchNo ? `Production shift on batch ${batchNo}` : purposeCategory),
+        expectedStartTime,
+        expectedEndTime,
+        expectedHours: liveCalculations.hours,
+        basicSalaryBDT: liveCalculations.basicSalary,
+        hourlyRateBDT: liveCalculations.hourlyRate,
+        overtimeMultiplier: liveCalculations.multiplier,
+        calculatedOvertimeAmountBDT: liveCalculations.totalAmount,
+        overtimeReason: overtimeReason.trim() || 'Urgent assembly line quota',
+        batchAllocations: nextBatchAllocations,
+      });
+      if (onSuccess) onSuccess(editingRequest.id);
+      onClose();
+      return;
+    }
 
     const newReq = createOvertimeRequest({
       employeeId: selectedEmployee.id,
@@ -181,39 +289,10 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
       expectedHours: liveCalculations.hours,
       overtimeReason: overtimeReason.trim() || 'Urgent assembly line quota',
       requestedBy: currentUser.name,
-      // Default single batch allocation initialized
-      batchAllocations: purposeCategory === 'Direct Production' ? [
-        {
-          id: `alloc-${Date.now()}`,
-          productionOrderId: selectedOrder?.id || productionOrderId || '',
-          productionOrderNumber: orderNo || 'UNASSIGNED',
-          productionBatchNumber: batchNo || 'UNASSIGNED',
-          productName: prodName || 'General Production',
-          processType: 'Spot Welding & Busbar',
-          allocatedHours: liveCalculations.hours,
-          hourlyRateBDT: liveCalculations.hourlyRate * liveCalculations.multiplier,
-          allocatedCostBDT: liveCalculations.totalAmount,
-          isOverhead: false,
-          notes: 'Initial production batch assignment',
-        }
-      ] : [
-        {
-          id: `alloc-${Date.now()}`,
-          productionOrderId: 'overhead',
-          productionOrderNumber: 'OVERHEAD-PLANT',
-          productionBatchNumber: 'PLANT-MAINTENANCE',
-          productName: 'Factory Facility',
-          processType: 'General Factory Overhead',
-          allocatedHours: liveCalculations.hours,
-          hourlyRateBDT: liveCalculations.hourlyRate * liveCalculations.multiplier,
-          allocatedCostBDT: liveCalculations.totalAmount,
-          isOverhead: true,
-          notes: 'Maintenance overhead - absorbed into factory utility expense',
-        }
-      ],
+      batchAllocations: nextBatchAllocations,
     });
 
-    if (onSuccess) onSuccess(newReq.id);
+    if (newReq?.id && onSuccess) onSuccess(newReq.id);
     onClose();
   };
 
@@ -227,8 +306,14 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
               <Clock className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h2 className="font-bold text-base leading-tight">Create Overtime Request</h2>
-              <p className="text-xs text-blue-100">Step 1 of Multi-Step Overtime Requisition Workflow</p>
+              <h2 className="font-bold text-base leading-tight">
+                {isEditMode ? 'Edit Overtime Request' : 'Create Overtime Request'}
+              </h2>
+              <p className="text-xs text-blue-100">
+                {isEditMode
+                  ? `${editingRequest?.requestNumber} • Modify planned hours, batch, or purpose`
+                  : 'Step 1 of Multi-Step Overtime Requisition Workflow'}
+              </p>
             </div>
           </div>
           <button
@@ -358,20 +443,22 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
                       </span>
                       <strong className="font-mono text-slate-900 dark:text-white">
                         {employeePolicy.calculationBasis === 'Fixed Hourly Rate'
-                          ? `৳${employeePolicy.fixedHourlyRateBDT || 0}/hr`
+                          ? canViewCost
+                            ? `৳${employeePolicy.fixedHourlyRateBDT || 0}/hr`
+                            : 'Restricted'
                           : `${employeePolicy.standardMonthlyWorkingHours} Hours`}
                       </strong>
                     </div>
                     <div>
                       <span className="text-slate-500 dark:text-slate-400 block text-[10px]">OT Multiplier:</span>
                       <strong className="font-mono text-amber-600 dark:text-amber-400">
-                        {employeePolicy.overtimeMultiplier}x
+                        {canViewCost ? `${employeePolicy.overtimeMultiplier}x` : 'Restricted'}
                       </strong>
                     </div>
                     <div>
                       <span className="text-slate-500 dark:text-slate-400 block text-[10px]">Computed Base Rate:</span>
                       <strong className="font-mono text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(liveCalculations.hourlyRate)}/hr
+                        {canViewCost ? `${formatCurrency(liveCalculations.hourlyRate)}/hr` : 'Restricted'}
                       </strong>
                     </div>
                   </div>
@@ -560,11 +647,13 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
             <div className="flex items-center justify-between">
               <span className="font-bold text-xs flex items-center gap-1.5 text-indigo-300">
                 <Calculator className="w-3.5 h-3.5 text-indigo-400" />
-                <span>Automatic Cost Calculation (Policy-Based)</span>
+                <span>{canViewCost ? 'Automatic Cost Calculation (Policy-Based)' : 'Net Overtime Hours Summary'}</span>
               </span>
-              <span className="text-[10px] text-indigo-200 font-mono">
-                Formula: Hourly Rate × {liveCalculations.multiplier}x Multiplier × Net Hours
-              </span>
+              {canViewCost && (
+                <span className="text-[10px] text-indigo-200 font-mono">
+                  Formula: Hourly Rate × {liveCalculations.multiplier}x Multiplier × Net Hours
+                </span>
+              )}
             </div>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-1 border-t border-indigo-900/60">
@@ -577,19 +666,19 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
               <div>
                 <span className="text-slate-400 block text-[10px]">Base Hourly Rate:</span>
                 <span className="font-mono font-bold text-white text-xs">
-                  {formatCurrency(liveCalculations.hourlyRate)}/hr
+                  {canViewCost ? `${formatCurrency(liveCalculations.hourlyRate)}/hr` : 'Restricted'}
                 </span>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px]">Policy Multiplier:</span>
                 <span className="font-mono font-bold text-amber-400 text-xs">
-                  {liveCalculations.multiplier}x (BLA 2006)
+                  {canViewCost ? `${liveCalculations.multiplier}x (BLA 2006)` : 'Restricted'}
                 </span>
               </div>
               <div>
                 <span className="text-slate-400 block text-[10px]">Total Overtime Cost:</span>
                 <span className="font-mono font-black text-amber-300 text-sm">
-                  {formatCurrency(liveCalculations.totalAmount)}
+                  {canViewCost ? formatCurrency(liveCalculations.totalAmount) : 'Restricted'}
                 </span>
               </div>
             </div>
@@ -606,10 +695,11 @@ export const NewOvertimeRequestModal: React.FC<NewOvertimeRequestModalProps> = (
             </button>
             <button
               type="submit"
-              className="py-2 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-2 shadow-xs transition-colors"
+              disabled={!hasSubmitPermission}
+              className="py-2 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold flex items-center gap-2 shadow-xs transition-colors"
             >
               <Save className="w-4 h-4" />
-              <span>Submit for Supervisor Approval</span>
+              <span>{isEditMode ? 'Save Request Changes' : 'Submit for Supervisor Approval'}</span>
             </button>
           </div>
         </form>

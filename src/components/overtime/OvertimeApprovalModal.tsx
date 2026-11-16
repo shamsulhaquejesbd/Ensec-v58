@@ -40,12 +40,15 @@ export const OvertimeApprovalModal: React.FC<OvertimeApprovalModalProps> = ({
     advanceOvertimeWorkflow,
     rejectOvertimeRequest,
     currentUser,
+    hasPageAction,
     formatCurrency,
   } = useERP();
 
-  const [mode, setMode] = useState<'APPROVE' | 'JUMP_FINAL' | 'REJECT'>('APPROVE');
-  const [remarks, setRemarks] = useState<string>('');
-  const [rejectionReason, setRejectionReason] = useState<string>('');
+  const canViewCost = hasPageAction ? hasPageAction('overtime-management', 'view_cost') : currentUser.role === 'Super Admin';
+  const canApproveSupervisor = hasPageAction ? hasPageAction('overtime-management', 'approve_supervisor') : currentUser.role === 'Super Admin';
+  const canApproveProduction = hasPageAction ? hasPageAction('overtime-management', 'approve_production') : currentUser.role === 'Super Admin';
+  const canVerifyHrAccounts = hasPageAction ? hasPageAction('overtime-management', 'verify_hr_accounts') : currentUser.role === 'Super Admin';
+  const canApproveFinal = hasPageAction ? hasPageAction('overtime-management', 'approve_final') : currentUser.role === 'Super Admin';
 
   // Determine current active step in workflow
   let currentStep: 'SUPERVISOR' | 'PRODUCTION' | 'HR' | 'FINAL' = 'SUPERVISOR';
@@ -70,22 +73,42 @@ export const OvertimeApprovalModal: React.FC<OvertimeApprovalModalProps> = ({
     nextStatus = 'Final Approved';
   }
 
-  const canSkipToFinal = currentStep !== 'FINAL';
+  const canApproveCurrentStep =
+    currentStep === 'SUPERVISOR'
+      ? canApproveSupervisor
+      : currentStep === 'PRODUCTION'
+      ? canApproveProduction
+      : currentStep === 'HR'
+      ? canVerifyHrAccounts
+      : canApproveFinal;
+
+  const canSkipToFinal = currentStep !== 'FINAL' && canApproveFinal;
+  const canRejectCurrent = canApproveCurrentStep || canApproveFinal;
+
+  const [mode, setMode] = useState<'APPROVE' | 'JUMP_FINAL' | 'REJECT'>(() => {
+    if (canApproveCurrentStep) return 'APPROVE';
+    if (canSkipToFinal) return 'JUMP_FINAL';
+    return 'REJECT';
+  });
+  const [remarks, setRemarks] = useState<string>('');
+  const [rejectionReason, setRejectionReason] = useState<string>('');
 
   const handleApprove = () => {
+    if (!canApproveCurrentStep) return;
     advanceOvertimeWorkflow(request.id, currentStep, remarks.trim() || undefined);
     if (onSuccess) onSuccess();
     onClose();
   };
 
   const handleJumpToFinalApprove = () => {
+    if (!canSkipToFinal) return;
     advanceOvertimeWorkflow(request.id, 'FINAL', remarks.trim() || undefined, true);
     if (onSuccess) onSuccess();
     onClose();
   };
 
   const handleReject = () => {
-    if (!rejectionReason.trim()) return;
+    if (!canRejectCurrent || !rejectionReason.trim()) return;
     rejectOvertimeRequest(request.id, rejectionReason.trim());
     if (onSuccess) onSuccess();
     onClose();
@@ -202,7 +225,7 @@ export const OvertimeApprovalModal: React.FC<OvertimeApprovalModalProps> = ({
               <div>
                 <span className="text-slate-400 block text-[10px]">Estimated Cost:</span>
                 <span className="font-mono font-black text-amber-600 dark:text-amber-400">
-                  {formatCurrency(request.calculatedOvertimeAmountBDT || 0)}
+                  {canViewCost ? formatCurrency(request.calculatedOvertimeAmountBDT || 0) : 'Restricted'}
                 </span>
               </div>
             </div>
@@ -217,100 +240,123 @@ export const OvertimeApprovalModal: React.FC<OvertimeApprovalModalProps> = ({
             </div>
           </div>
 
-          {/* Action Choice Tabs */}
-          <div className={`grid gap-2 ${canSkipToFinal ? 'grid-cols-1 sm:grid-cols-3' : 'grid-cols-2'}`}>
-            <button
-              type="button"
-              onClick={() => setMode('APPROVE')}
-              className={`py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
-                mode === 'APPROVE'
-                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-500 shadow-xs'
-                  : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-              }`}
-            >
-              <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-              <span>Approve ({stepTitle.split(':')[0]})</span>
-            </button>
-            {canSkipToFinal && (
-              <button
-                type="button"
-                onClick={() => setMode('JUMP_FINAL')}
-                className={`py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
-                  mode === 'JUMP_FINAL'
-                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-500 shadow-xs'
-                    : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-                }`}
-              >
-                <FastForward className="w-4 h-4 text-amber-500 shrink-0" />
-                <span>Jump to Final Approve</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setMode('REJECT')}
-              className={`py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
-                mode === 'REJECT'
-                  ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-500 shadow-xs'
-                  : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
-              }`}
-            >
-              <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
-              <span>Reject Request</span>
-            </button>
-          </div>
-
-          {mode === 'APPROVE' ? (
-            <div className="space-y-2">
-              <label className="font-bold text-slate-700 dark:text-slate-300">
-                Approval Remarks / Notes (Optional)
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Enter remarks for the next stage or audit trail..."
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
-              />
-              <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-900 text-[11px] flex items-center gap-2">
-                <Info className="w-4 h-4 shrink-0 text-blue-500" />
-                <span>
-                  Clicking Approve will advance this request to <strong>{nextStatus}</strong> by {currentUser.name}.
-                </span>
-              </div>
-            </div>
-          ) : mode === 'JUMP_FINAL' ? (
-            <div className="space-y-2">
-              <label className="font-bold text-slate-700 dark:text-slate-300">
-                Direct Final Approval Remarks (Optional)
-              </label>
-              <textarea
-                rows={2}
-                placeholder="Enter optional remarks for direct final executive approval..."
-                value={remarks}
-                onChange={(e) => setRemarks(e.target.value)}
-                className="w-full py-2 px-3 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 text-slate-900 dark:text-white font-medium"
-              />
-              <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] flex items-center gap-2">
-                <FastForward className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
-                <span>
-                  <strong>Skip First 3 Approvals:</strong> Confirming will bypass intermediate approval steps and jump directly to <strong>Final Approved</strong> by {currentUser.name}.
-                </span>
-              </div>
+          {!canApproveCurrentStep && !canSkipToFinal && !canRejectCurrent ? (
+            <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-200 flex items-center gap-2 text-xs">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600" />
+              <span>
+                You do not have approval clearance for <strong>{stepTitle}</strong> or Final Executive Approval.
+              </span>
             </div>
           ) : (
-            <div className="space-y-2">
-              <label className="font-bold text-rose-700 dark:text-rose-400">
-                Reason for Rejection *
-              </label>
-              <textarea
-                rows={2}
-                required
-                placeholder="Specify reason for rejecting this overtime request..."
-                value={rejectionReason}
-                onChange={(e) => setRejectionReason(e.target.value)}
-                className="w-full py-2 px-3 rounded-xl border border-rose-300 dark:border-rose-900 bg-rose-50/40 dark:bg-rose-950/20 text-slate-900 dark:text-white font-medium"
-              />
-            </div>
+            <>
+              {/* Action Choice Tabs */}
+              <div
+                className={`grid gap-2 ${
+                  [canApproveCurrentStep, canSkipToFinal, canRejectCurrent].filter(Boolean).length === 3
+                    ? 'grid-cols-1 sm:grid-cols-3'
+                    : [canApproveCurrentStep, canSkipToFinal, canRejectCurrent].filter(Boolean).length === 2
+                    ? 'grid-cols-2'
+                    : 'grid-cols-1'
+                }`}
+              >
+                {canApproveCurrentStep && (
+                  <button
+                    type="button"
+                    onClick={() => setMode('APPROVE')}
+                    className={`py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      mode === 'APPROVE'
+                        ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-500 shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                    <span>Approve ({stepTitle.split(':')[0]})</span>
+                  </button>
+                )}
+                {canSkipToFinal && (
+                  <button
+                    type="button"
+                    onClick={() => setMode('JUMP_FINAL')}
+                    className={`py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      mode === 'JUMP_FINAL'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-500 shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <FastForward className="w-4 h-4 text-amber-500 shrink-0" />
+                    <span>Jump to Final Approve</span>
+                  </button>
+                )}
+                {canRejectCurrent && (
+                  <button
+                    type="button"
+                    onClick={() => setMode('REJECT')}
+                    className={`py-2 px-3 rounded-xl font-bold flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+                      mode === 'REJECT'
+                        ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-500 shadow-xs'
+                        : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700'
+                    }`}
+                  >
+                    <XCircle className="w-4 h-4 text-rose-500 shrink-0" />
+                    <span>Reject Request</span>
+                  </button>
+                )}
+              </div>
+
+              {mode === 'APPROVE' && canApproveCurrentStep ? (
+                <div className="space-y-2">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Approval Remarks / Notes (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Enter remarks for the next stage or audit trail..."
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    className="w-full py-2 px-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-white font-medium"
+                  />
+                  <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/30 text-blue-800 dark:text-blue-300 border border-blue-200 dark:border-blue-900 text-[11px] flex items-center gap-2">
+                    <Info className="w-4 h-4 shrink-0 text-blue-500" />
+                    <span>
+                      Clicking Approve will advance this request to <strong>{nextStatus}</strong> by {currentUser.name}.
+                    </span>
+                  </div>
+                </div>
+              ) : mode === 'JUMP_FINAL' && canSkipToFinal ? (
+                <div className="space-y-2">
+                  <label className="font-bold text-slate-700 dark:text-slate-300">
+                    Direct Final Approval Remarks (Optional)
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Enter optional remarks for direct final executive approval..."
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    className="w-full py-2 px-3 rounded-xl border border-amber-300 dark:border-amber-800 bg-amber-50/40 dark:bg-amber-950/20 text-slate-900 dark:text-white font-medium"
+                  />
+                  <div className="p-2.5 rounded-xl bg-amber-50 dark:bg-amber-950/30 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 text-[11px] flex items-center gap-2">
+                    <FastForward className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+                    <span>
+                      <strong>Skip First 3 Approvals:</strong> Confirming will bypass intermediate approval steps and jump directly to <strong>Final Approved</strong> by {currentUser.name}.
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <label className="font-bold text-rose-700 dark:text-rose-400">
+                    Reason for Rejection *
+                  </label>
+                  <textarea
+                    rows={2}
+                    required
+                    placeholder="Specify reason for rejecting this overtime request..."
+                    value={rejectionReason}
+                    onChange={(e) => setRejectionReason(e.target.value)}
+                    className="w-full py-2 px-3 rounded-xl border border-rose-300 dark:border-rose-900 bg-rose-50/40 dark:bg-rose-950/20 text-slate-900 dark:text-white font-medium"
+                  />
+                </div>
+              )}
+            </>
           )}
 
           {/* Footer */}
@@ -322,7 +368,7 @@ export const OvertimeApprovalModal: React.FC<OvertimeApprovalModalProps> = ({
             >
               Cancel
             </button>
-            {mode === 'APPROVE' ? (
+            {mode === 'APPROVE' && canApproveCurrentStep ? (
               <button
                 type="button"
                 onClick={handleApprove}
@@ -331,7 +377,7 @@ export const OvertimeApprovalModal: React.FC<OvertimeApprovalModalProps> = ({
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Confirm &amp; Sign Off</span>
               </button>
-            ) : mode === 'JUMP_FINAL' ? (
+            ) : mode === 'JUMP_FINAL' && canSkipToFinal ? (
               <button
                 type="button"
                 onClick={handleJumpToFinalApprove}
@@ -340,7 +386,7 @@ export const OvertimeApprovalModal: React.FC<OvertimeApprovalModalProps> = ({
                 <FastForward className="w-4 h-4" />
                 <span>Skip Steps &amp; Final Approve</span>
               </button>
-            ) : (
+            ) : canRejectCurrent ? (
               <button
                 type="button"
                 disabled={!rejectionReason.trim()}
@@ -350,7 +396,7 @@ export const OvertimeApprovalModal: React.FC<OvertimeApprovalModalProps> = ({
                 <XCircle className="w-4 h-4" />
                 <span>Confirm Rejection</span>
               </button>
-            )}
+            ) : null}
           </div>
         </div>
       </div>

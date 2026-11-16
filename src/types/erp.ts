@@ -34,6 +34,7 @@ export type PageModuleId =
   | 'warranty'
   | 'finance-cashbook'
   | 'payroll'
+  | 'overtime-management'
   | 'reports'
   | 'users-permissions'
   | string;
@@ -1768,6 +1769,7 @@ export function getDefaultPermissionsForRole(role: Role): UserPermissions {
         'warranty',
         'finance-cashbook',
         'payroll',
+        'overtime-management',
         'reports',
         'users-permissions',
       ],
@@ -2009,11 +2011,16 @@ export function hasModulePermission(user: User, moduleId: PageModuleId): boolean
   if (user.role === 'Super Admin') return true;
   // If user has pagePermissions configured, check view action
   const pagePerms = user.permissions?.pagePermissions;
-  if (pagePerms && typeof pagePerms === 'object' && pagePerms[moduleId]) {
-    return Boolean(pagePerms[moduleId]?.view);
+  const canonicalModuleId = moduleId.startsWith('overtime-') ? 'overtime-management' : moduleId;
+  if (pagePerms && typeof pagePerms === 'object' && (pagePerms[canonicalModuleId] || pagePerms[moduleId])) {
+    return Boolean((pagePerms[canonicalModuleId] || pagePerms[moduleId])?.view);
   }
   const perms = resolveUserPermissions(user);
-  return (perms.allowedModules || []).includes(moduleId);
+  const allowed = perms.allowedModules || [];
+  if (moduleId.startsWith('overtime-') || moduleId === 'overtime-management') {
+    return allowed.includes('overtime-management') || allowed.includes(moduleId) || allowed.some((m) => String(m).startsWith('overtime-'));
+  }
+  return allowed.includes(moduleId);
 }
 
 export function hasFeaturePermission(

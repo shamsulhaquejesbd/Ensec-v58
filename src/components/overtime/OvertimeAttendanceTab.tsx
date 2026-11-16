@@ -21,7 +21,10 @@ interface OvertimeAttendanceTabProps {
 }
 
 export const OvertimeAttendanceTab: React.FC<OvertimeAttendanceTabProps> = ({ onRecordNewAttendance }) => {
-  const { overtimeAttendances, verifyOvertimeAttendance, currentUser } = useERP();
+  const { overtimeAttendances, verifyOvertimeAttendance, currentUser, hasPageAction } = useERP();
+
+  const canRecordAttendance = hasPageAction ? hasPageAction('overtime-management', 'record_attendance') : currentUser.role === 'Super Admin';
+  const canVerifyAttendance = hasPageAction ? hasPageAction('overtime-management', 'verify_attendance') : currentUser.role === 'Super Admin';
   
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'verified' | 'pending' | 'flagged'>('all');
@@ -55,6 +58,7 @@ export const OvertimeAttendanceTab: React.FC<OvertimeAttendanceTabProps> = ({ on
 
   // Handle instant verification by supervisor/admin
   const handleVerify = (id: string, hours?: number) => {
+    if (!canVerifyAttendance) return;
     setVerifyingId(id);
     setTimeout(() => {
       verifyOvertimeAttendance(id, hours, currentUser.role === 'Super Admin' ? 'Verified by Admin Controller' : 'Verified by Floor Supervisor');
@@ -82,13 +86,15 @@ export const OvertimeAttendanceTab: React.FC<OvertimeAttendanceTabProps> = ({ on
           </div>
         </div>
 
-        <button
-          onClick={onRecordNewAttendance}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm"
-        >
-          <Plus className="w-4 h-4" />
-          Record OT Attendance
-        </button>
+        {canRecordAttendance && (
+          <button
+            onClick={onRecordNewAttendance}
+            className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-lg text-sm font-medium transition-colors shadow-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Record OT Attendance
+          </button>
+        )}
       </div>
 
       {/* Filter and Search Bar */}
@@ -280,7 +286,7 @@ export const OvertimeAttendanceTab: React.FC<OvertimeAttendanceTabProps> = ({ on
                             </div>
                             <div className="text-[10px] text-slate-400">{att.verificationDate}</div>
                           </div>
-                        ) : (
+                        ) : canVerifyAttendance ? (
                           <button
                             onClick={() => handleVerify(att.id, att.actualOvertimeHours)}
                             disabled={verifyingId === att.id}
@@ -289,6 +295,10 @@ export const OvertimeAttendanceTab: React.FC<OvertimeAttendanceTabProps> = ({ on
                             <Check className="w-3.5 h-3.5" />
                             {verifyingId === att.id ? 'Verifying...' : 'Verify OT'}
                           </button>
+                        ) : (
+                          <span className="text-[11px] font-medium text-slate-400 italic">
+                            Awaiting Verification
+                          </span>
                         )}
                       </td>
                     </tr>

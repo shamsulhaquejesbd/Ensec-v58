@@ -19,8 +19,14 @@ export const OvertimePayrollCostingTab: React.FC = () => {
     overtimeRequests, 
     productionOrders, 
     getProductionCostBreakdown,
-    overtimeAuditLogs 
+    overtimeAuditLogs,
+    hasPageAction,
+    currentUser,
   } = useERP();
+
+  const canViewCost = hasPageAction
+    ? hasPageAction('overtime-management', 'view_cost')
+    : currentUser.role === 'Super Admin';
 
   // Approved overtime requests
   const approvedRequests = overtimeRequests.filter(r => r.status === 'Final Approved');
@@ -74,7 +80,9 @@ export const OvertimePayrollCostingTab: React.FC = () => {
             <span>Approved OT Earnings</span>
             <Coins className="w-4 h-4 text-blue-600" />
           </div>
-          <div className="text-2xl font-bold font-mono text-slate-900">৳{totalApprovedOTCost.toLocaleString()}</div>
+          <div className="text-2xl font-bold font-mono text-slate-900">
+            {canViewCost ? `৳${totalApprovedOTCost.toLocaleString()}` : 'Restricted'}
+          </div>
           <div className="text-xs text-slate-500 mt-1">{approvedRequests.length} verified work requests</div>
         </div>
 
@@ -83,7 +91,9 @@ export const OvertimePayrollCostingTab: React.FC = () => {
             <span>Posted in Payroll Runs</span>
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
           </div>
-          <div className="text-2xl font-bold font-mono text-emerald-600">৳{totalProcessedPayrollCost.toLocaleString()}</div>
+          <div className="text-2xl font-bold font-mono text-emerald-600">
+            {canViewCost ? `৳${totalProcessedPayrollCost.toLocaleString()}` : 'Restricted'}
+          </div>
           <div className="text-xs text-slate-500 mt-1">{processedInPayroll.length} records locked into salary runs</div>
         </div>
 
@@ -92,7 +102,9 @@ export const OvertimePayrollCostingTab: React.FC = () => {
             <span>Direct WIP Absorbed</span>
             <Factory className="w-4 h-4 text-indigo-600" />
           </div>
-          <div className="text-2xl font-bold font-mono text-indigo-700">৳{directWIPOvertime.toLocaleString()}</div>
+          <div className="text-2xl font-bold font-mono text-indigo-700">
+            {canViewCost ? `৳${directWIPOvertime.toLocaleString()}` : 'Restricted'}
+          </div>
           <div className="text-xs text-slate-500 mt-1">Capitalized into production orders & batches</div>
         </div>
 
@@ -101,7 +113,9 @@ export const OvertimePayrollCostingTab: React.FC = () => {
             <span>Factory Overhead</span>
             <Layers className="w-4 h-4 text-amber-600" />
           </div>
-          <div className="text-2xl font-bold font-mono text-amber-700">৳{overheadOvertime.toLocaleString()}</div>
+          <div className="text-2xl font-bold font-mono text-amber-700">
+            {canViewCost ? `৳${overheadOvertime.toLocaleString()}` : 'Restricted'}
+          </div>
           <div className="text-xs text-slate-500 mt-1">Maintenance & facility upkeep</div>
         </div>
       </div>
@@ -139,12 +153,15 @@ export const OvertimePayrollCostingTab: React.FC = () => {
                       <span className="font-mono text-[10px] bg-slate-100 px-1 py-0.5 rounded text-slate-600">{req.employeeCode || req.employeeId}</span>
                     </div>
                     <div className="text-slate-500 text-[11px] mt-0.5">
-                      {req.overtimeDate} • {(req.actualOvertimeHours || req.expectedHours || 0).toFixed(1)} hrs @ ৳{(req.hourlyRateBDT || 0).toFixed(0)}/h
+                      {req.overtimeDate} • {(req.actualOvertimeHours || req.expectedHours || 0).toFixed(1)} hrs
+                      {canViewCost ? ` @ ৳${(req.hourlyRateBDT || 0).toFixed(0)}/h` : ''}
                     </div>
                   </div>
 
                   <div className="text-right">
-                    <div className="font-mono font-bold text-slate-900">৳{(req.calculatedOvertimeAmountBDT || 0).toLocaleString()}</div>
+                    <div className="font-mono font-bold text-slate-900">
+                      {canViewCost ? `৳${(req.calculatedOvertimeAmountBDT || 0).toLocaleString()}` : 'Restricted'}
+                    </div>
                     {req.isPayrollProcessed ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 mt-0.5">
                         <Lock className="w-2.5 h-2.5" /> Run: {req.payrollRunId?.slice(0, 10)}
@@ -197,10 +214,10 @@ export const OvertimePayrollCostingTab: React.FC = () => {
                     <div className="text-right">
                       <div className="text-[10px] text-slate-500">Direct Overtime Absorbed</div>
                       <div className="font-mono font-bold text-indigo-700 text-sm">
-                        ৳{breakdown?.directOvertimeCost?.toLocaleString() || 0}
+                        {canViewCost ? `৳${breakdown?.directOvertimeCost?.toLocaleString() || 0}` : 'Restricted'}
                       </div>
                       <div className="text-[10px] text-slate-400 mt-0.5">
-                        Total Batch Cost: ৳{breakdown?.totalManufacturingCost?.toLocaleString() || 0}
+                        Total Batch Cost: {canViewCost ? `৳${breakdown?.totalManufacturingCost?.toLocaleString() || 0}` : 'Restricted'}
                       </div>
                     </div>
                   </div>

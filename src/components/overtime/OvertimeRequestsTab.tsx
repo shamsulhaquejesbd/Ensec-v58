@@ -34,12 +34,14 @@ import { OvertimeRequest, OvertimeStatus } from '../../types/overtime.ts';
 
 interface OvertimeRequestsTabProps {
   onOpenNewRequest: () => void;
+  onOpenEditRequest: (request: OvertimeRequest) => void;
   onOpenApprovalModal: (request: OvertimeRequest) => void;
   onOpenBatchSplitModal: (request: OvertimeRequest) => void;
 }
 
 export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
   onOpenNewRequest,
+  onOpenEditRequest,
   onOpenApprovalModal,
   onOpenBatchSplitModal,
 }) => {
@@ -47,9 +49,26 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
     overtimeRequests,
     deleteOvertimeRequest,
     currentUser,
-    currentUserHasPermission,
+    hasPageAction,
     formatCurrency,
   } = useERP();
+
+  const canCreateRequest = hasPageAction ? hasPageAction('overtime-management', 'create_request') : currentUser.role === 'Super Admin';
+  const canEditRequest = hasPageAction ? hasPageAction('overtime-management', 'edit_request') : currentUser.role === 'Super Admin';
+  const canAllocateBatch = hasPageAction ? hasPageAction('overtime-management', 'allocate_batch') : currentUser.role === 'Super Admin';
+  const canViewCost = hasPageAction ? hasPageAction('overtime-management', 'view_cost') : currentUser.role === 'Super Admin';
+  const canApproveSupervisor = hasPageAction ? hasPageAction('overtime-management', 'approve_supervisor') : currentUser.role === 'Super Admin';
+  const canApproveProduction = hasPageAction ? hasPageAction('overtime-management', 'approve_production') : currentUser.role === 'Super Admin';
+  const canVerifyHrAccounts = hasPageAction ? hasPageAction('overtime-management', 'verify_hr_accounts') : currentUser.role === 'Super Admin';
+  const canApproveFinal = hasPageAction ? hasPageAction('overtime-management', 'approve_final') : currentUser.role === 'Super Admin';
+
+  const canActOnRequestStep = (status: OvertimeStatus): boolean => {
+    if (status === 'Pending Supervisor') return canApproveSupervisor || canApproveFinal;
+    if (status === 'Supervisor Approved') return canApproveProduction || canApproveFinal;
+    if (status === 'Production Approved') return canVerifyHrAccounts || canApproveFinal;
+    if (status === 'HR Verified') return canApproveFinal;
+    return false;
+  };
 
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -230,13 +249,15 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
             ))}
           </select>
 
-          <button
-            onClick={onOpenNewRequest}
-            className="py-2 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 shadow-xs transition-colors"
-          >
-            <PlusCircle className="w-4 h-4" />
-            <span>Create OT Request</span>
-          </button>
+          {canCreateRequest && (
+            <button
+              onClick={onOpenNewRequest}
+              className="py-2 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold flex items-center gap-1.5 shadow-xs transition-colors"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Create OT Request</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -250,7 +271,7 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
                 <th className="p-3">Employee Details</th>
                 <th className="p-3">Production Batch &amp; Purpose</th>
                 <th className="p-3 text-center">Expected Time</th>
-                <th className="p-3 text-right">Hours &amp; Cost</th>
+                <th className="p-3 text-right">{canViewCost ? 'Hours & Cost' : 'OT Hours'}</th>
                 <th className="p-3 text-center">Approval Workflow</th>
                 <th className="p-3 text-center">Actions</th>
               </tr>
@@ -318,12 +339,18 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
                       <span className="font-mono font-bold text-slate-900 dark:text-white block">
                         {req.actualOvertimeHours || req.expectedHours} hrs
                       </span>
-                      <span className="font-mono font-black text-amber-600 dark:text-amber-400 text-xs">
-                        {formatCurrency(req.calculatedOvertimeAmountBDT || 0)}
-                      </span>
-                      <span className="block text-[10px] text-slate-400">
-                        {req.overtimeMultiplier ?? 2.0}x Multiplier
-                      </span>
+                      {canViewCost ? (
+                        <>
+                          <span className="font-mono font-black text-amber-600 dark:text-amber-400 text-xs">
+                            {formatCurrency(req.calculatedOvertimeAmountBDT || 0)}
+                          </span>
+                          <span className="block text-[10px] text-slate-400">
+                            {req.overtimeMultiplier ?? 2.0}x Multiplier
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 italic">Financials Restricted</span>
+                      )}
                     </td>
 
                     <td className="p-3 text-center">
@@ -339,7 +366,7 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
 
                     <td className="p-3 text-center">
                       <div className="flex items-center justify-center gap-1.5">
-                        {req.status !== 'Final Approved' && req.status !== 'Rejected' && (
+                        {req.status !== 'Final Approved' && req.status !== 'Rejected' && canActOnRequestStep(req.status) && (
                           <button
                             onClick={() => onOpenApprovalModal(req)}
                             title="Review & Advance Approval"
@@ -350,23 +377,39 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
                           </button>
                         )}
 
-                        <button
-                          onClick={() => onOpenBatchSplitModal(req)}
-                          title="Allocate & Split Hours across Batches"
-                          className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-400 transition-colors"
-                        >
-                          <Cpu className="w-3.5 h-3.5" />
-                        </button>
+                        {!req.isPayrollProcessed &&
+                          req.status !== 'Final Approved' &&
+                          req.status !== 'Rejected' &&
+                          canEditRequest && (
+                            <button
+                              onClick={() => onOpenEditRequest(req)}
+                              title="Edit Planned Hours & Purpose"
+                              className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900 text-blue-600 dark:text-blue-400 transition-colors"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
+                          )}
 
-                        {!req.isPayrollProcessed && (
+                        {canAllocateBatch && (
                           <button
-                            onClick={() => deleteOvertimeRequest(req.id)}
-                            title="Delete Request"
-                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-500 transition-colors"
+                            onClick={() => onOpenBatchSplitModal(req)}
+                            title="Allocate & Split Hours across Batches"
+                            className="p-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900 text-indigo-600 dark:text-indigo-400 transition-colors"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Cpu className="w-3.5 h-3.5" />
                           </button>
                         )}
+
+                        {!req.isPayrollProcessed &&
+                          ((canEditRequest && req.status !== 'Final Approved' && req.status !== 'Rejected') || canApproveFinal) && (
+                            <button
+                              onClick={() => deleteOvertimeRequest(req.id)}
+                              title="Delete Request"
+                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-rose-50 dark:bg-slate-800 dark:hover:bg-rose-950 text-slate-400 hover:text-rose-500 transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                       </div>
                     </td>
                   </tr>

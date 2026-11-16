@@ -41,8 +41,13 @@ export const OvertimeBatchSplitModal: React.FC<OvertimeBatchSplitModalProps> = (
   const {
     productionOrders,
     saveOvertimeBatchAllocations,
+    hasPageAction,
+    currentUser,
     formatCurrency,
   } = useERP();
+
+  const canAllocateBatch = hasPageAction ? hasPageAction('overtime-management', 'allocate_batch') : currentUser.role === 'Super Admin';
+  const canViewCost = hasPageAction ? hasPageAction('overtime-management', 'view_cost') : currentUser.role === 'Super Admin';
 
   const maxHours = request.actualOvertimeHours || request.expectedHours || 4.0;
   const baseHourlyRate = (request.hourlyRateBDT || 135) * (request.overtimeMultiplier ?? 2.0);
@@ -137,7 +142,7 @@ export const OvertimeBatchSplitModal: React.FC<OvertimeBatchSplitModalProps> = (
   };
 
   const handleSave = () => {
-    if (isOverAllocated) return;
+    if (!canAllocateBatch || isOverAllocated) return;
     saveOvertimeBatchAllocations(request.id, allocations);
     if (onSuccess) onSuccess();
     onClose();
@@ -177,7 +182,7 @@ export const OvertimeBatchSplitModal: React.FC<OvertimeBatchSplitModalProps> = (
                 {request.employeeName} ({request.employeeCode})
               </span>
               <span className="block text-[11px] text-slate-500 font-mono">
-                Date: {request.overtimeDate} • Base Wage: {formatCurrency(request.basicSalaryBDT || 0)}
+                Date: {request.overtimeDate}{canViewCost ? ` • Base Wage: ${formatCurrency(request.basicSalaryBDT || 0)}` : ''}
               </span>
             </div>
 
@@ -202,12 +207,14 @@ export const OvertimeBatchSplitModal: React.FC<OvertimeBatchSplitModalProps> = (
                 </span>
               </div>
 
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Overtime Cost</span>
-                <span className="font-mono text-base font-black text-slate-900 dark:text-white">
-                  {formatCurrency(totalAllocatedCost)}
-                </span>
-              </div>
+              {canViewCost && (
+                <div>
+                  <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Overtime Cost</span>
+                  <span className="font-mono text-base font-black text-slate-900 dark:text-white">
+                    {formatCurrency(totalAllocatedCost)}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
 
@@ -252,7 +259,7 @@ export const OvertimeBatchSplitModal: React.FC<OvertimeBatchSplitModalProps> = (
                   <th className="p-3">Batch Number</th>
                   <th className="p-3">Manufacturing Process</th>
                   <th className="p-3 w-28 text-right">Allocated Hours</th>
-                  <th className="p-3 w-32 text-right">Cost (BDT)</th>
+                  {canViewCost && <th className="p-3 w-32 text-right">Cost (BDT)</th>}
                   <th className="p-3 text-center">Overhead / Direct</th>
                   <th className="p-3 w-12 text-center">Action</th>
                 </tr>
@@ -311,9 +318,11 @@ export const OvertimeBatchSplitModal: React.FC<OvertimeBatchSplitModalProps> = (
                       />
                     </td>
 
-                    <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
-                      {formatCurrency(alloc.allocatedCostBDT)}
-                    </td>
+                    {canViewCost && (
+                      <td className="p-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                        {formatCurrency(alloc.allocatedCostBDT)}
+                      </td>
+                    )}
 
                     <td className="p-2.5 text-center">
                       <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
@@ -368,7 +377,7 @@ export const OvertimeBatchSplitModal: React.FC<OvertimeBatchSplitModalProps> = (
             </button>
             <button
               type="button"
-              disabled={isOverAllocated}
+              disabled={isOverAllocated || !canAllocateBatch}
               onClick={handleSave}
               className="py-2 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold flex items-center gap-2 shadow-xs transition-colors"
             >

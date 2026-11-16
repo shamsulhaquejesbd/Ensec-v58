@@ -150,7 +150,8 @@ export const PageWisePermissionsEditor: React.FC<PageWisePermissionsEditorProps>
               (page.id.startsWith('installment-') && allowedMods.includes('installment' as any)) ||
               (page.id.startsWith('collection-') && allowedMods.includes('collection' as any)) ||
               (page.id.startsWith('sms-') && allowedMods.includes('sms' as any)) ||
-              (page.id.startsWith('warranty-') && allowedMods.includes('warranty' as any));
+              (page.id.startsWith('warranty-') && allowedMods.includes('warranty' as any)) ||
+              (page.id === 'overtime-management' && allowedMods.some((m: string) => m.startsWith('overtime-')));
             userMap[page.id][act.key] = hasMod;
           } else {
             userMap[page.id][act.key] = false;

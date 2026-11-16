@@ -1225,6 +1225,7 @@ export const PERMISSION_TEMPLATES: PermissionTemplate[] = [
             act.key === 'view_collection_notification' ||
             act.key === 'view_valuation' ||
             act.key === 'view_revenue' ||
+            act.key === 'view_cost' ||
             act.key === 'export'
           ) {
             map[page.id][act.key] = true;
@@ -1268,6 +1269,13 @@ export function hasPageAction(
     'banks': 'basic-data-banks',
     'pricing-matrix': 'basic-data-pricing-matrix',
     'field-force': 'basic-data-field-force',
+    'overtime-dashboard': 'overtime-management',
+    'overtime-requests': 'overtime-management',
+    'overtime-attendance': 'overtime-management',
+    'overtime-batch-allocation': 'overtime-management',
+    'overtime-sync': 'overtime-management',
+    'overtime-policies': 'overtime-management',
+    'overtime-reports': 'overtime-management',
   };
   const canonicalPageId = PAGE_ID_ALIASES[pageId] || pageId;
 
@@ -1328,6 +1336,8 @@ export function hasPageAction(
       (pageId.startsWith('collection-') && allowed.includes('collection')) ||
       (pageId.startsWith('sms-') && allowed.includes('sms')) ||
       (pageId.startsWith('warranty-') && allowed.includes('warranty')) ||
+      (pageId.startsWith('overtime-') && (allowed.includes('overtime-management') || allowed.includes(pageId))) ||
+      (pageId === 'overtime-management' && allowed.some((p: string) => p.startsWith('overtime-'))) ||
       (pageId === 'basic-data' && allowed.some((p: string) => p.startsWith('basic-data-'))) ||
       (pageId === 'stock' && allowed.some((p: string) => p.startsWith('stock-'))) ||
       (pageId === 'installment' && allowed.some((p: string) => p.startsWith('installment-'))) ||

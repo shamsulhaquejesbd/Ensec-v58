@@ -20,7 +20,9 @@ interface OvertimeBatchAllocationTabProps {
 export const OvertimeBatchAllocationTab: React.FC<OvertimeBatchAllocationTabProps> = ({
   onOpenSplitModal,
 }) => {
-  const { overtimeRequests, productionOrders } = useERP();
+  const { overtimeRequests, productionOrders, hasPageAction, currentUser } = useERP();
+  const canAllocateBatch = hasPageAction ? hasPageAction('overtime-management', 'allocate_batch') : currentUser.role === 'Super Admin';
+  const canViewCost = hasPageAction ? hasPageAction('overtime-management', 'view_cost') : currentUser.role === 'Super Admin';
   const [filterType, setFilterType] = useState<'all' | 'unsplit' | 'split' | 'overhead'>('all');
 
   // Requests that are approved or verified
@@ -97,14 +99,14 @@ export const OvertimeBatchAllocationTab: React.FC<OvertimeBatchAllocationTabProp
                 <th className="py-3 px-3">Approved OT Hours</th>
                 <th className="py-3 px-3">Batch Allocation Breakdown</th>
                 <th className="py-3 px-3">Direct WIP vs Overhead</th>
-                <th className="py-3 px-3 text-right">Total Allocated Cost</th>
+                {canViewCost && <th className="py-3 px-3 text-right">Total Allocated Cost</th>}
                 <th className="py-3 px-4 text-right">Split Management</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-sm">
               {eligibleRequests.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-8 text-center text-slate-400 text-xs">
+                  <td colSpan={canViewCost ? 7 : 6} className="py-8 text-center text-slate-400 text-xs">
                     No overtime requests found for batch allocation.
                   </td>
                 </tr>
@@ -128,7 +130,9 @@ export const OvertimeBatchAllocationTab: React.FC<OvertimeBatchAllocationTabProp
 
                     <td className="py-3.5 px-3 whitespace-nowrap">
                       <div className="font-mono font-semibold text-slate-900">{(req.actualOvertimeHours || req.expectedHours || 0).toFixed(2)} hrs</div>
-                      <div className="text-[11px] text-slate-400">Rate: ৳{(req.hourlyRateBDT || 0).toFixed(0)}/hr × {req.overtimeMultiplier ?? 2.0}x</div>
+                      {canViewCost && (
+                        <div className="text-[11px] text-slate-400">Rate: ৳{(req.hourlyRateBDT || 0).toFixed(0)}/hr × {req.overtimeMultiplier ?? 2.0}x</div>
+                      )}
                     </td>
 
                     <td className="py-3.5 px-3">
@@ -153,7 +157,9 @@ export const OvertimeBatchAllocationTab: React.FC<OvertimeBatchAllocationTabProp
                               </div>
                               <div className="text-right">
                                 <span className="font-bold font-mono">{alloc.allocatedHours.toFixed(2)}h</span>
-                                <div className="text-[10px] text-slate-500">৳{alloc.allocatedCostBDT.toLocaleString()}</div>
+                                {canViewCost && (
+                                  <div className="text-[10px] text-slate-500">৳{alloc.allocatedCostBDT.toLocaleString()}</div>
+                                )}
                               </div>
                             </div>
                           ))}
@@ -186,19 +192,25 @@ export const OvertimeBatchAllocationTab: React.FC<OvertimeBatchAllocationTabProp
                       </div>
                     </td>
 
-                    <td className="py-3.5 px-3 text-right whitespace-nowrap">
-                      <div className="font-mono font-bold text-slate-900">৳{totalCost.toLocaleString()}</div>
-                      <div className="text-[10px] text-slate-400">Total BDT</div>
-                    </td>
+                    {canViewCost && (
+                      <td className="py-3.5 px-3 text-right whitespace-nowrap">
+                        <div className="font-mono font-bold text-slate-900">৳{totalCost.toLocaleString()}</div>
+                        <div className="text-[10px] text-slate-400">Total BDT</div>
+                      </td>
+                    )}
 
                     <td className="py-3.5 px-4 text-right">
-                      <button
-                        onClick={() => onOpenSplitModal(req)}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors"
-                      >
-                        <Split className="w-3.5 h-3.5" />
-                        Split / Allocate
-                      </button>
+                      {canAllocateBatch ? (
+                        <button
+                          onClick={() => onOpenSplitModal(req)}
+                          className="inline-flex items-center gap-1 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-semibold transition-colors"
+                        >
+                          <Split className="w-3.5 h-3.5" />
+                          Split / Allocate
+                        </button>
+                      ) : (
+                        <span className="text-[11px] text-slate-400 italic">View Only</span>
+                      )}
                     </td>
                   </tr>
                 );

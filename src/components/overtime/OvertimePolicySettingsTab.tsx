@@ -37,7 +37,15 @@ export const OvertimePolicySettingsTab: React.FC = () => {
     updateEmployeeOvertimePolicy,
     formatCurrency,
     currentUser,
+    hasPageAction,
   } = useERP();
+
+  const canConfigurePolicy = hasPageAction
+    ? hasPageAction('overtime-management', 'configure_policy')
+    : currentUser.role === 'Super Admin';
+  const canViewCost = hasPageAction
+    ? hasPageAction('overtime-management', 'view_cost')
+    : currentUser.role === 'Super Admin';
 
   // Search & Filter state
   const [searchQuery, setSearchQuery] = useState('');
@@ -159,6 +167,7 @@ export const OvertimePolicySettingsTab: React.FC = () => {
 
   // Open Edit Policy Modal
   const handleOpenEdit = (emp: FieldForceRep) => {
+    if (!canConfigurePolicy) return;
     const policy = getEmployeeEffectiveOvertimePolicy(emp.id);
     setEditingEmployee(emp);
     setEditIsEligible(policy.isEligible);
@@ -179,7 +188,7 @@ export const OvertimePolicySettingsTab: React.FC = () => {
   // Save Policy Changes
   const handleSavePolicy = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!editingEmployee) return;
+    if (!editingEmployee || !canConfigurePolicy) return;
 
     updateEmployeeOvertimePolicy(
       editingEmployee.id,
@@ -424,14 +433,18 @@ export const OvertimePolicySettingsTab: React.FC = () => {
                         <span className="font-semibold text-slate-800 dark:text-slate-200 block">
                           {policy.calculationBasis}
                         </span>
-                        {policy.calculationBasis === 'Basic Salary' ? (
-                          <span className="text-[10px] text-slate-400 font-mono">
-                            Basic ৳{basic.toLocaleString()}
-                          </span>
+                        {canViewCost ? (
+                          policy.calculationBasis === 'Basic Salary' ? (
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              Basic ৳{basic.toLocaleString()}
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-mono">
+                              Fixed ৳{policy.fixedHourlyRateBDT || 0}/hr
+                            </span>
+                          )
                         ) : (
-                          <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-mono">
-                            Fixed ৳{policy.fixedHourlyRateBDT || 0}/hr
-                          </span>
+                          <span className="text-[10px] text-slate-400">Restricted</span>
                         )}
                       </td>
 
@@ -444,15 +457,15 @@ export const OvertimePolicySettingsTab: React.FC = () => {
                       </td>
 
                       <td className="py-3 px-4 text-right font-mono font-bold text-amber-600 dark:text-amber-400">
-                        {policy.overtimeMultiplier}x
+                        {canViewCost ? `${policy.overtimeMultiplier}x` : 'Restricted'}
                       </td>
 
                       <td className="py-3 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {formatCurrency(calc.hourlyRate)}/hr
+                        {canViewCost ? `${formatCurrency(calc.hourlyRate)}/hr` : 'Restricted'}
                       </td>
 
                       <td className="py-3 px-4 text-right font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
-                        {policy.isEligible ? `${formatCurrency(calc.effectiveRateBDT)}/hr` : '৳ 0'}
+                        {canViewCost ? (policy.isEligible ? `${formatCurrency(calc.effectiveRateBDT)}/hr` : '৳ 0') : 'Restricted'}
                       </td>
 
                       <td className="py-3 px-4 font-mono text-[11px] text-slate-500">
@@ -464,14 +477,18 @@ export const OvertimePolicySettingsTab: React.FC = () => {
 
                       <td className="py-3 px-4 text-center">
                         <div className="flex items-center justify-center gap-1.5">
-                          <button
-                            onClick={() => handleOpenEdit(emp)}
-                            className="py-1 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 font-bold text-[10px] flex items-center gap-1 transition-colors"
-                            title="Edit Individual Overtime Terms"
-                          >
-                            <Edit2 className="w-3 h-3 text-blue-600" />
-                            <span>Edit Policy</span>
-                          </button>
+                          {canConfigurePolicy ? (
+                            <button
+                              onClick={() => handleOpenEdit(emp)}
+                              className="py-1 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/60 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 font-bold text-[10px] flex items-center gap-1 transition-colors"
+                              title="Edit Individual Overtime Terms"
+                            >
+                              <Edit2 className="w-3 h-3 text-blue-600" />
+                              <span>Edit Policy</span>
+                            </button>
+                          ) : (
+                            <span className="text-[10px] font-medium text-slate-400">Read Only</span>
+                          )}
 
                           {historyCount > 0 && (
                             <button
@@ -557,7 +574,7 @@ export const OvertimePolicySettingsTab: React.FC = () => {
       </div>
 
       {/* MODAL: EDIT EMPLOYEE OVERTIME POLICY DIRECTLY */}
-      {editingEmployee && (
+      {editingEmployee && canConfigurePolicy && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-xl overflow-hidden shadow-2xl animate-in fade-in duration-150">
             {/* Header */}
@@ -767,28 +784,30 @@ export const OvertimePolicySettingsTab: React.FC = () => {
                     <span>Calculation Preview for {editingEmployee.name}</span>
                   </span>
                   <span className="text-[10px] text-slate-400 font-mono">
-                    {editBasis === 'Fixed Hourly Rate'
-                      ? `Flat ৳${editFixedRate}/hr × ${editMultiplier === '' ? 0 : editMultiplier}x`
-                      : `Basic ৳${editPreview.basic.toLocaleString()} ÷ ${editStandardHours}h × ${editMultiplier === '' ? 0 : editMultiplier}x`}
+                    {canViewCost
+                      ? (editBasis === 'Fixed Hourly Rate'
+                        ? `Flat ৳${editFixedRate}/hr × ${editMultiplier === '' ? 0 : editMultiplier}x`
+                        : `Basic ৳${editPreview.basic.toLocaleString()} ÷ ${editStandardHours}h × ${editMultiplier === '' ? 0 : editMultiplier}x`)
+                      : 'Financial preview restricted'}
                   </span>
                 </div>
                 <div className="grid grid-cols-3 gap-2 text-[11px] pt-1 border-t border-slate-800">
                   <div>
                     <span className="text-slate-400 block text-[10px]">Base Hourly Rate:</span>
                     <span className="font-mono font-bold text-white text-xs">
-                      {formatCurrency(editPreview.hourly)}/hr
+                      {canViewCost ? `${formatCurrency(editPreview.hourly)}/hr` : 'Restricted'}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px]">Effective OT Rate:</span>
                     <span className="font-mono font-bold text-emerald-400 text-xs">
-                      {formatCurrency(editPreview.netRate)}/hr
+                      {canViewCost ? `${formatCurrency(editPreview.netRate)}/hr` : 'Restricted'}
                     </span>
                   </div>
                   <div>
                     <span className="text-slate-400 block text-[10px]">Sample 2-Hour OT:</span>
                     <span className="font-mono font-black text-amber-400 text-xs">
-                      {formatCurrency(editPreview.sampleAmount)}
+                      {canViewCost ? formatCurrency(editPreview.sampleAmount) : 'Restricted'}
                     </span>
                   </div>
                 </div>
@@ -874,9 +893,11 @@ export const OvertimePolicySettingsTab: React.FC = () => {
                           </td>
                           <td className="py-2.5 px-3 font-medium">{hist.calculationBasis}</td>
                           <td className="py-2.5 px-3 text-right font-mono">{hist.standardMonthlyWorkingHours}h</td>
-                          <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-600">{hist.overtimeMultiplier}x</td>
+                          <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-600">
+                            {canViewCost ? `${hist.overtimeMultiplier}x` : 'Restricted'}
+                          </td>
                           <td className="py-2.5 px-3 text-right font-mono">
-                            {hist.fixedHourlyRateBDT ? `৳${hist.fixedHourlyRateBDT}` : 'N/A'}
+                            {canViewCost ? (hist.fixedHourlyRateBDT ? `৳${hist.fixedHourlyRateBDT}` : 'N/A') : 'Restricted'}
                           </td>
                           <td className="py-2.5 px-3 text-slate-500 text-[11px]">
                             {hist.notes || 'Routine revision'} {hist.updatedBy ? `(${hist.updatedBy})` : ''}
