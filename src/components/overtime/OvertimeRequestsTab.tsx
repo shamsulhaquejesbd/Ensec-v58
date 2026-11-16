@@ -7,7 +7,7 @@
  * and Section 8: 4-tier approval workflow (Supervisor -> Prod. Mgr -> HR -> Final).
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useERP } from '../../context/ERPContext.tsx';
 import {
   Search,
@@ -27,6 +27,8 @@ import {
   ArrowRight,
   Layers,
   FileSpreadsheet,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { OvertimeRequest, OvertimeStatus } from '../../types/overtime.ts';
 
@@ -53,6 +55,8 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
   const [batchFilter, setBatchFilter] = useState<string>('all');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const PAGE_SIZE = 10;
 
   // Filtered List
   const filteredRequests = useMemo(() => {
@@ -85,6 +89,57 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
       return true;
     });
   }, [overtimeRequests, searchQuery, statusFilter, departmentFilter, batchFilter]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, statusFilter, departmentFilter, batchFilter]);
+
+  const pagination = useMemo(() => {
+    const totalRequests = filteredRequests.length;
+    const totalPages = Math.max(1, Math.ceil(totalRequests / PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, currentPage), totalPages);
+    const startIndex = (safePage - 1) * PAGE_SIZE;
+    const paginatedRequests = filteredRequests.slice(startIndex, startIndex + PAGE_SIZE);
+    const startRecord = totalRequests === 0 ? 0 : startIndex + 1;
+    const endRecord = Math.min(safePage * PAGE_SIZE, totalRequests);
+
+    const pageNumbers: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
+    } else if (safePage <= 4) {
+      for (let i = 1; i <= 5; i++) pageNumbers.push(i);
+      pageNumbers.push('...');
+      pageNumbers.push(totalPages);
+    } else if (safePage >= totalPages - 3) {
+      pageNumbers.push(1);
+      pageNumbers.push('...');
+      for (let i = totalPages - 4; i <= totalPages; i++) pageNumbers.push(i);
+    } else {
+      pageNumbers.push(1);
+      pageNumbers.push('...');
+      pageNumbers.push(safePage - 1);
+      pageNumbers.push(safePage);
+      pageNumbers.push(safePage + 1);
+      pageNumbers.push('...');
+      pageNumbers.push(totalPages);
+    }
+
+    return {
+      totalRequests,
+      totalPages,
+      safePage,
+      paginatedRequests,
+      startRecord,
+      endRecord,
+      pageNumbers,
+    };
+  }, [filteredRequests, currentPage]);
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
 
   // Unique departments and batches for filter dropdowns
   const departments = useMemo(() => {
@@ -201,14 +256,14 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-              {filteredRequests.length === 0 ? (
+              {pagination.paginatedRequests.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="p-8 text-center text-slate-400">
                     No overtime requests match your search and filter criteria.
                   </td>
                 </tr>
               ) : (
-                filteredRequests.map((req) => (
+                pagination.paginatedRequests.map((req) => (
                   <tr key={req.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors">
                     <td className="p-3">
                       <span className="font-mono font-bold text-blue-600 dark:text-blue-400 block">
@@ -319,6 +374,63 @@ export const OvertimeRequestsTab: React.FC<OvertimeRequestsTabProps> = ({
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* Pagination Footer */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 text-xs">
+          <div className="text-slate-600 dark:text-slate-400">
+            {pagination.totalRequests === 0 ? (
+              <span>Showing <b>0</b> of <b>0</b> requests</span>
+            ) : (
+              <span>
+                Showing <b>{pagination.startRecord}–{pagination.endRecord}</b> of{' '}
+                <b>{pagination.totalRequests}</b> requests
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              type="button"
+              disabled={pagination.safePage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              <span>Previous</span>
+            </button>
+
+            {pagination.pageNumbers.map((pageItem, idx) =>
+              pageItem === '...' ? (
+                <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-400 select-none">
+                  ...
+                </span>
+              ) : (
+                <button
+                  key={`page-${pageItem}`}
+                  type="button"
+                  onClick={() => setCurrentPage(Number(pageItem))}
+                  className={`min-w-[30px] px-2.5 py-1.5 rounded-lg border font-bold transition-colors ${
+                    pagination.safePage === pageItem
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                  }`}
+                >
+                  {pageItem}
+                </button>
+              )
+            )}
+
+            <button
+              type="button"
+              disabled={pagination.safePage >= pagination.totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              <span>Next</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       </div>
     </div>

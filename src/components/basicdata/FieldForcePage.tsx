@@ -23,6 +23,8 @@ import {
   Smartphone,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   AlertCircle,
   Upload,
   Calendar,
@@ -164,6 +166,8 @@ export const FieldForcePage: React.FC = () => {
   const [selectedDesignation, setSelectedDesignation] = useState<string>('ALL');
   const [selectedStatus, setSelectedStatus] = useState<'ALL' | 'Active' | 'Inactive'>('ALL');
   const [viewMode, setViewMode] = useState<'table' | 'grid'>('table');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const PAGE_SIZE = 10;
   const [clearStorageNotice, setClearStorageNotice] = useState<string>('');
 
   // Auto purge test/local session memory on component mount
@@ -1001,6 +1005,57 @@ export const FieldForcePage: React.FC = () => {
     });
   }, [cleanFieldForceReps, searchQuery, selectedCategoryFilter, selectedMarketFilter, selectedDesignation, selectedStatus]);
 
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, selectedCategoryFilter, selectedMarketFilter, selectedDesignation, selectedStatus]);
+
+  const pagination = useMemo(() => {
+    const totalEmployees = filteredReps.length;
+    const totalPages = Math.max(1, Math.ceil(totalEmployees / PAGE_SIZE));
+    const safePage = Math.min(Math.max(1, currentPage), totalPages);
+    const startIndex = (safePage - 1) * PAGE_SIZE;
+    const paginatedReps = filteredReps.slice(startIndex, startIndex + PAGE_SIZE);
+    const startRecord = totalEmployees === 0 ? 0 : startIndex + 1;
+    const endRecord = Math.min(safePage * PAGE_SIZE, totalEmployees);
+
+    const pageNumbers: (number | string)[] = [];
+    if (totalPages <= 7) {
+      for (let i = 1; i <= totalPages; i++) pageNumbers.push(i);
+    } else if (safePage <= 4) {
+      for (let i = 1; i <= 5; i++) pageNumbers.push(i);
+      pageNumbers.push('...');
+      pageNumbers.push(totalPages);
+    } else if (safePage >= totalPages - 3) {
+      pageNumbers.push(1);
+      pageNumbers.push('...');
+      for (let i = totalPages - 4; i <= totalPages; i++) pageNumbers.push(i);
+    } else {
+      pageNumbers.push(1);
+      pageNumbers.push('...');
+      pageNumbers.push(safePage - 1);
+      pageNumbers.push(safePage);
+      pageNumbers.push(safePage + 1);
+      pageNumbers.push('...');
+      pageNumbers.push(totalPages);
+    }
+
+    return {
+      totalEmployees,
+      totalPages,
+      safePage,
+      paginatedReps,
+      startRecord,
+      endRecord,
+      pageNumbers,
+    };
+  }, [filteredReps, currentPage]);
+
+  useEffect(() => {
+    if (currentPage > pagination.totalPages) {
+      setCurrentPage(pagination.totalPages);
+    }
+  }, [currentPage, pagination.totalPages]);
+
   // High-Level KPIs
   const totalReps = cleanFieldForceReps.length;
   const activeRepsCount = cleanFieldForceReps.filter(
@@ -1373,7 +1428,7 @@ export const FieldForcePage: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/60">
-                {filteredReps.map((rep) => {
+                {pagination.paginatedReps.map((rep) => {
                   const isActive = rep.status === 'Active' || rep.isActive !== false;
                   const targetBDT = rep.monthlyTargetBDT || 2500000;
                   const achievedBDT = rep.monthlyAchievedBDT || 0;
@@ -1582,11 +1637,65 @@ export const FieldForcePage: React.FC = () => {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Footer */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30 text-xs">
+            <div className="text-slate-600 dark:text-slate-400">
+              <span>
+                Showing <b>{pagination.startRecord}–{pagination.endRecord}</b> of{' '}
+                <b>{pagination.totalEmployees}</b> employees
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                disabled={pagination.safePage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
+
+              {pagination.pageNumbers.map((pageItem, idx) =>
+                pageItem === '...' ? (
+                  <span key={`ellipsis-${idx}`} className="px-1.5 text-slate-400 select-none">
+                    ...
+                  </span>
+                ) : (
+                  <button
+                    key={`page-${pageItem}`}
+                    type="button"
+                    onClick={() => setCurrentPage(Number(pageItem))}
+                    className={`min-w-[30px] px-2.5 py-1.5 rounded-lg border font-bold transition-colors ${
+                      pagination.safePage === pageItem
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {pageItem}
+                  </button>
+                )
+              )}
+
+              <button
+                type="button"
+                disabled={pagination.safePage >= pagination.totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         /* GRID VIEW */
+        <div className="space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredReps.map((rep) => {
+          {pagination.paginatedReps.map((rep) => {
             const isActive = rep.status === 'Active' || rep.isActive !== false;
             const targetBDT = rep.monthlyTargetBDT || 2500000;
             const achievedBDT = rep.monthlyAchievedBDT || 0;
@@ -1723,6 +1832,60 @@ export const FieldForcePage: React.FC = () => {
               </div>
             );
           })}
+        </div>
+
+          {/* Grid Pagination Footer */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs text-xs">
+            <div className="text-slate-600 dark:text-slate-400">
+              <span>
+                Showing <b>{pagination.startRecord}–{pagination.endRecord}</b> of{' '}
+                <b>{pagination.totalEmployees}</b> employees
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                disabled={pagination.safePage <= 1}
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                <span>Previous</span>
+              </button>
+
+              {pagination.pageNumbers.map((pageItem, idx) =>
+                pageItem === '...' ? (
+                  <span key={`grid-ellipsis-${idx}`} className="px-1.5 text-slate-400 select-none">
+                    ...
+                  </span>
+                ) : (
+                  <button
+                    key={`grid-page-${pageItem}`}
+                    type="button"
+                    onClick={() => setCurrentPage(Number(pageItem))}
+                    className={`min-w-[30px] px-2.5 py-1.5 rounded-lg border font-bold transition-colors ${
+                      pagination.safePage === pageItem
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                        : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    {pageItem}
+                  </button>
+                )
+              )}
+
+              <button
+                type="button"
+                disabled={pagination.safePage >= pagination.totalPages}
+                onClick={() => setCurrentPage((p) => Math.min(pagination.totalPages, p + 1))}
+                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-semibold hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <span>Next</span>
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
