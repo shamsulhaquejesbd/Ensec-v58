@@ -984,6 +984,7 @@ export const OvertimeReportsTab: React.FC = () => {
       'Employee Name': r.employeeName,
       'Department': r.department,
       'Hours': r.actualOvertimeHours || r.expectedHours,
+      'Reason for Overtime Requisition': r.overtimeReason || '-',
       'Rate (BDT)': r.hourlyRateBDT || 0,
       'Total OT (BDT)': r.calculatedOvertimeAmountBDT || 0,
       'Payroll Processed': r.isPayrollProcessed ? 'YES' : 'PENDING',
@@ -1460,7 +1461,7 @@ export const OvertimeReportsTab: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {currentData.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="py-10 text-center text-slate-400">
+                    <td colSpan={12} className="py-10 text-center text-slate-400">
                       No data found for the selected filter combination.
                     </td>
                   </tr>
